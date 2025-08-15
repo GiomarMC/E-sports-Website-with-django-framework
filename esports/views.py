@@ -1,12 +1,14 @@
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework import viewsets, status
 from rest_framework_simplejwt.tokens import RefreshToken
 from esports.serializers import AdminLoginSerializer
 
 
-class AdminLoginView(APIView):
-    def post(self, request):
+class AdminLoginView(viewsets.ViewSet):
+
+    @action(detail=False, methods=['post'], url_path='login')
+    def login(self, request):
         serializer = AdminLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
