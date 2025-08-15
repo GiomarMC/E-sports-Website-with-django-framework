@@ -1,6 +1,8 @@
-from django.urls import path
+from rest_framework.routers import DefaultRouter
 from .views import AdminLoginView
 
-urlpatterns = [
-    path('admin/login/', AdminLoginView.as_view(), name='admin-login'),
-]
+
+router = DefaultRouter()
+router.register(r'admin', AdminLoginView, basename='admin-login')
+
+urlpatterns = router.urls
