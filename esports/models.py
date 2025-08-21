@@ -45,6 +45,21 @@ class Game(models.Model):
         return self.name
 
 
+class AdminGame(models.Model):
+    admin = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        limit_choices_to={'role': 'admin'}
+        )
+    game = models.ForeignKey(Game, on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ('admin', 'game')
+
+    def __str__(self):
+        return f"{self.admin.username} - {self.game.name}"
+
+
 class Team(models.Model):
     STATUS_CHOICES = (
         ('pending', 'Pending'),
