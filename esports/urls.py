@@ -1,8 +1,8 @@
 from rest_framework.routers import DefaultRouter
-from .views import AdminLoginView
+from .views import AdminViewSet
 
 
 router = DefaultRouter()
-router.register(r'admin', AdminLoginView, basename='admin-login')
+router.register(r'admin', AdminViewSet, basename='admin')
 
 urlpatterns = router.urls
