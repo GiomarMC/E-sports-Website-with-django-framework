@@ -6,13 +6,20 @@ from .models import CustomUser
 
 @receiver(post_migrate)
 def create_default_superadmin(sender, **kwargs):
-    if not CustomUser.objects.filter(role='superadmin').exists():
-        username = getattr(settings, 'DEFAULT_SUPERADMIN_USERNAME')
-        password = getattr(settings, 'DEFAULT_SUPERADMIN_PASSWORD')
+    username = getattr(settings, 'DEFAULT_SUPERADMIN_USERNAME')
+    password = getattr(settings, 'DEFAULT_SUPERADMIN_PASSWORD')
 
-        CustomUser.objects.create_superuser(
-            username=username,
-            password=password,
-            role='superadmin'
-        )
+    superadmin, created = CustomUser.objects.get_or_create(
+        username=username,
+        defaults={'role': 'superadmin'}
+    )
+
+    if created:
+        superadmin.set_password(password)
+        superadmin.save()
         print(f"Default superadmin created: {username}")
+    else:
+        superadmin.set_password(password)
+        superadmin.role = 'superadmin'
+        superadmin.save()
+        print(f"Default superadmin updated: {username}")
