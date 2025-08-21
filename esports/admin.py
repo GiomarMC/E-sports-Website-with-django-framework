@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    CustomUser, Game, Team, TeamPlayer, IndividualInscription,
+    CustomUser, Game, AdminGame, Team, TeamPlayer, IndividualInscription,
     Tournament, Match, MatchParticipant, Transmission,
     MediaContent, ContactInfo
 )
@@ -17,6 +17,15 @@ class CustomUserAdmin(admin.ModelAdmin):
 class GameAdmin(admin.ModelAdmin):
     list_display = ('name', 'type_of_game', 'active')
     list_filter = ('type_of_game', 'active')
+    search_fields = ('name',)
+
+
+@admin.register(AdminGame)
+class AdminGameAdmin(admin.ModelAdmin):
+    list_display = ('admin', 'game')
+    list_filter = ('admin', 'game')
+    search_fields = ('admin__username', 'game__name')
+    autocomplete_fields = ['admin', 'game']
 
 
 @admin.register(Team)
