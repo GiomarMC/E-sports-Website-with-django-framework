@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 
 
 class CustomUser(AbstractUser):
@@ -34,11 +35,14 @@ class Game(models.Model):
         ('individual', 'Individual'),
         ('team', 'Team'),
     )
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=100, unique=True)
     description = models.TextField()
     type_of_game = models.CharField(max_length=10, choices=TYPE_CHOICES)
-    bases = models.FileField(upload_to='bases/')
-    images = models.ImageField(upload_to='games/')
+    bases = models.FileField(
+        upload_to='bases/', validators=[FileExtensionValidator(['pdf'])])
+    images = models.ImageField(
+        upload_to='games/',
+        validators=[FileExtensionValidator(['jpg', 'jpeg', 'png'])])
     active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -51,7 +55,11 @@ class AdminGame(models.Model):
         on_delete=models.CASCADE,
         limit_choices_to={'role': 'admin'}
         )
-    game = models.ForeignKey(Game, on_delete=models.CASCADE)
+    game = models.ForeignKey(
+        Game,
+        on_delete=models.CASCADE,
+        related_name='admin_assignments'
+    )
 
     class Meta:
         unique_together = ('admin', 'game')
