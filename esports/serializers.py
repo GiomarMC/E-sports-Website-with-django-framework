@@ -91,3 +91,64 @@ class AdminCreateSerializer(serializers.ModelSerializer):
             role=validated_data['role']
         )
         return user
+
+
+class GameCreateUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Game
+        fields = ['id', 'name', 'description',
+                  'type_of_game', 'active', 'images', 'bases']
+
+    def validate_name(self, value):
+        request = self.context.get('request')
+        if request and request.method in ['PUT', 'PATCH']:
+            game_id = self.instance.id if self.instance else None
+            if Game.objects.exclude(id=game_id).filter(name=value).exists():
+                raise serializers.ValidationError(
+                    "Game with this name already exists.")
+        else:
+            if Game.objects.filter(name=value).exists():
+                raise serializers.ValidationError(
+                    "Game with this name already exists.")
+        return value
+
+    def validate_bases(self, value):
+        if value and not value.name.lower().endswith('.pdf'):
+            raise serializers.ValidationError("Bases file must be a PDF.")
+        return value
+
+    def validate_images(self, value):
+        if value and not value.name.lower().endswith((
+                '.png', '.jpg', '.jpeg')):
+            raise serializers.ValidationError(
+                "Images must be in PNG, JPG, or JPEG format."
+                )
+        return value
+
+    def update(self, instance, validated_data):
+        user = self.context['request'].user
+
+        if user.role == 'admin':
+            allowed_fields = ['description', 'bases']
+            for field in allowed_fields:
+                if field in validated_data:
+                    setattr(instance, field, validated_data[field])
+            instance.save()
+            return instance
+
+        return super().update(instance, validated_data)
+
+
+class GamePublicSerializer(serializers.ModelSerializer):
+    tournaments = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Game
+        fields = ['id', 'name', 'description', 'type_of_game',
+                  'active', 'images', 'bases', 'tournaments']
+
+    def get_tournaments(self, obj):
+        return [{
+            'id': t.id,
+            'name': t.name,
+            'status': t.status} for t in obj.tournament_set.all()]
