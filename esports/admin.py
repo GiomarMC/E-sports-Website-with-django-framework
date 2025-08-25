@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.core.exceptions import ValidationError
 from .models import (
     CustomUser, Game, AdminGame, Team, TeamPlayer, IndividualInscription,
     Tournament, Match, MatchParticipant, Transmission,
@@ -13,11 +14,45 @@ class CustomUserAdmin(admin.ModelAdmin):
     list_filter = ['role']
 
 
+class AdminGameInline(admin.TabularInline):
+    model = AdminGame
+    extra = 1
+    autocomplete_fields = ['admin']
+
+
+class TournamentInline(admin.TabularInline):
+    model = Tournament
+    extra = 1
+    readonly_fields = ['name', 'start_date', 'status']
+
+
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
     list_display = ('name', 'type_of_game', 'active')
     list_filter = ('type_of_game', 'active')
     search_fields = ('name',)
+    inlines = [AdminGameInline, TournamentInline]
+
+    def has_add_permission(self, request):
+        return request.user.is_superadmin()
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superadmin()
+
+    def get_readonly_fields(self, request, obj=None):
+        if request.user.is_superadmin():
+            return []
+        if request.user.is_admin():
+            return ['name', 'description', 'type_of_game', 'images', 'active']
+        return self.readonly_fields
+
+    def save_model(self, request, obj, form, change):
+        if obj.bases and not obj.bases.name.endswith('.pdf'):
+            raise ValidationError("Bases must be a PDF file")
+        if obj.images and not obj.images.name.lower().endswith(
+                ('.png', '.jpg', '.jpeg')):
+            raise ValidationError("Images must be in PNG, JPG, or JPEG format")
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(AdminGame)
