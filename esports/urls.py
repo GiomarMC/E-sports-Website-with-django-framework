@@ -1,9 +1,26 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
-from .views import AdminViewSet, GameViewSet
+
+from .views import (
+    AdminViewSet, ContactInfoViewSet, GameViewSet, MatchViewSet,
+    MediaContentViewSet, RegistrationViewSet, SiteSettingsView,
+    StageViewSet, StreamViewSet, TournamentViewSet,
+)
 
 
 router = DefaultRouter()
 router.register(r'admin', AdminViewSet, basename='admin')
 router.register(r'games', GameViewSet, basename='games')
+router.register(r'tournaments', TournamentViewSet, basename='tournaments')
+router.register(
+    r'registrations', RegistrationViewSet, basename='registrations'
+)
+router.register(r'stages', StageViewSet, basename='stages')
+router.register(r'matches', MatchViewSet, basename='matches')
+router.register(r'streams', StreamViewSet, basename='streams')
+router.register(r'media', MediaContentViewSet, basename='media')
+router.register(r'contacts', ContactInfoViewSet, basename='contacts')
 
-urlpatterns = router.urls
+urlpatterns = [
+    path('settings/', SiteSettingsView.as_view(), name='site-settings'),
+] + router.urls
