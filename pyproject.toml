@@ -32,13 +32,16 @@ dev = [
     "pytest-django",
     "black",
     "isort",
-    "flake8"
+    "flake8",
+    "factory-boy>=3.2.0",
+    "faker>=18.0.0",
+    "freezegun>=1.2.0",
+    "coverage>=7.0.0"
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["*"]
-exclude = ["tests*"]
+include = ["core*", "esports*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.env"]

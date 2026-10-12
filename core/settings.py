@@ -11,6 +11,8 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import sys
+from datetime import timedelta
 from pathlib import Path
 import environ
 import dj_database_url
@@ -23,6 +25,12 @@ env = environ.Env(
     DEBUG=(bool, False),
     SECRET_KEY=(str, ""),
     ALLOWED_HOSTS=(list, []),
+    CORS_ALLOWED_ORIGINS=(list, []),
+    POSTGRES_URL=(str, ""),
+    POSTGRES_HOST=(str, "localhost"),
+    POSTGRES_PORT=(str, "5432"),
+    DEFAULT_SUPERADMIN_USERNAME=(str, ""),
+    DEFAULT_SUPERADMIN_PASSWORD=(str, ""),
 )
 
 env_file = os.path.join(BASE_DIR, '.env')
@@ -60,7 +68,9 @@ INSTALLED_APPS += CUSTOM_APPS
 
 INSTALLED_APPS += [
     'rest_framework',
-    'corsheaders'
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'drf_yasg',
 ]
 
 MIDDLEWARE = [
@@ -97,8 +107,24 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+
+def build_database_url():
+    """POSTGRES_URL has priority; otherwise the URL is built from the
+    POSTGRES_* variables used by docker-compose. Without any of them a local
+    SQLite database is used (handy for tests and quick development)."""
+    if env('POSTGRES_URL'):
+        return env('POSTGRES_URL')
+    if env.str('POSTGRES_DB', default=''):
+        return (
+            f"postgres://{env('POSTGRES_USER')}:{env('POSTGRES_PASSWORD')}"
+            f"@{env('POSTGRES_HOST')}:{env('POSTGRES_PORT')}"
+            f"/{env('POSTGRES_DB')}"
+        )
+    return f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+
+
 DATABASES = {
-    'default': dj_database_url.parse(env('POSTGRES_URL'))
+    'default': dj_database_url.parse(build_database_url())
 }
 
 
@@ -138,7 +164,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = env.str('TIME_ZONE', default='America/Lima')
 
 USE_I18N = True
 
@@ -161,13 +187,43 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 AUTH_USER_MODEL = 'esports.CustomUser'
 
-CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS').split(',')
+CORS_ALLOWED_ORIGINS = [o for o in env('CORS_ALLOWED_ORIGINS') if o]
 
 DEFAULT_SUPERADMIN_USERNAME = env('DEFAULT_SUPERADMIN_USERNAME')
 DEFAULT_SUPERADMIN_PASSWORD = env('DEFAULT_SUPERADMIN_PASSWORD')
+
+CURRENCY = env.str('CURRENCY', default='PEN')
+
+# Max size (in MB) of uploaded vouchers, logos and images.
+MAX_UPLOAD_SIZE_MB = env.int('MAX_UPLOAD_SIZE_MB', default=5)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=env.int('JWT_ACCESS_MINUTES', default=60)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=env.int('JWT_REFRESH_DAYS', default=1)
+    ),
+}
+
+SWAGGER_SETTINGS = {
+    'USE_SESSION_AUTH': False,
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'name': 'Authorization',
+            'in': 'header',
+            'description': 'JWT: "Bearer <access token>"',
+        }
+    },
+}
+
+if len(sys.argv) > 1 and sys.argv[1] == 'test':
+    # Hashing passwords is slow on purpose: tests do not need it.
+    PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
