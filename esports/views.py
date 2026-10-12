@@ -445,10 +445,12 @@ class RegistrationViewSet(ActionPermissionMixin,
                           mixins.DestroyModelMixin,
                           viewsets.GenericViewSet):
     """Registrations management (game admins). New registrations are created
-    with ``POST /tournaments/{id}/register/``."""
+    with ``POST /tournaments/{id}/register/`` and cannot be edited later."""
     serializer_class = RegistrationSerializer
     default_permissions = [IsGameAdmin]
     permission_classes_by_action = {'check_status': PUBLIC}
+    # Registrations are final once sent: only PATCH (seed / is_active).
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
     def get_queryset(self):

@@ -16,7 +16,7 @@ PostgreSQL (via **Docker**).
 | `SiteSettings` | Global configuration: event name, global registration switch and global registration dates. |
 | `Game` | Discipline: image, description, rules (text + PDF), `individual`/`team`, min/max players per team. |
 | `Tournament` | Edition of a game: fee per player, own registration switch, optional registration dates (override the global ones), slots. |
-| `Registration` / `RegistrationMember` | Public registration of a team (or a single player) with its members, one captain and the payment voucher. `amount_due = fee_per_player × members`. |
+| `Registration` / `RegistrationMember` | Public registration of a team (or a single player) with its members, one captain and the payment voucher. `amount_due = fee_per_player × members`. It is final once sent: admins only review it (confirm/reject), enable/disable it and set its seed. |
 | `Stage` | Phase of a tournament. A tournament is built chaining stages by `order`, e.g. *Groups → Playoffs*. |
 | `Match` / `MatchParticipant` | Matches with participants, scores and placements. `next_match` / `loser_next_match` define where winners and losers go. |
 | `Stream` | Stream link (Twitch, YouTube, ...) for a game, a match or the whole event, with an `is_live` flag. |
@@ -57,7 +57,7 @@ Interactive documentation: **`/api/docs/`** (Swagger) and `/api/redoc/`.
 | `POST /api/tournaments/{id}/register/` | public (multipart: `team_name`, `contact_email`, `voucher`, `logo`, `members` as JSON) |
 | `GET /api/tournaments/{id}/participants/` · `GET /api/tournaments/{id}/schedule/` | public |
 | `GET /api/registrations/status/{code}/` | public |
-| `GET /api/registrations/?tournament=&status=&search=` · `POST /{id}/confirm/` · `POST /{id}/reject/` · `POST /{id}/enable/` · `POST /{id}/disable/` · `PATCH` (seed, name...) | game admin |
+| `GET /api/registrations/?tournament=&status=&search=` · `POST /{id}/confirm/` · `POST /{id}/reject/` · `POST /{id}/enable/` · `POST /{id}/disable/` · `PATCH` (only `seed`) | game admin |
 | `GET /api/stages/?tournament=` · `GET /{id}/standings/` · `GET /{id}/bracket/` | public |
 | `POST,PATCH,DELETE /api/stages/` · `POST /{id}/draw/` · `POST /{id}/reset/` · `POST /{id}/auto-schedule/` | game admin |
 | `GET /api/matches/?tournament=&stage=&game=&status=&date=&from=&to=&upcoming=true` | public |

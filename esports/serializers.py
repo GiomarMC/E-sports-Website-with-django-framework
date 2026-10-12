@@ -446,7 +446,8 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
-    """Full data, only for admins."""
+    """Full data, only for admins. Read only except ``seed`` and
+    ``is_active``."""
     members = RegistrationMemberSerializer(many=True, read_only=True)
     display_name = serializers.CharField(read_only=True)
     tournament_name = serializers.CharField(
@@ -463,9 +464,11 @@ class RegistrationSerializer(serializers.ModelSerializer):
             'is_active', 'seed', 'code', 'created_at', 'reviewed_at',
             'reviewed_by', 'members'
             ]
+        # A registration cannot be edited once it is sent: admins can only
+        # order (seed) and enable/disable it; the status changes through
+        # the confirm/reject actions.
         read_only_fields = [
-            'tournament', 'voucher', 'amount_due', 'status',
-            'rejection_reason', 'code', 'created_at', 'reviewed_at',
+            f for f in fields if f not in ['seed', 'is_active']
             ]
 
 

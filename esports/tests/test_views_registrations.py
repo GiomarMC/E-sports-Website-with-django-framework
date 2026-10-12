@@ -153,21 +153,49 @@ class RegistrationViewSetTestCase(APITestCase):
         self.registration.refresh_from_db()
         self.assertTrue(self.registration.is_active)
 
-    def test_patch_seed_and_name(self):
+    def test_patch_seed(self):
         # Arrange
         self.client.force_authenticate(user=self.admin)
 
         # Act
         response = self.client.patch(
-            self.detail_url, {'seed': 1, 'team_name': 'Renamed'},
-            format='json',
+            self.detail_url, {'seed': 1}, format='json'
         )
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.registration.refresh_from_db()
         self.assertEqual(self.registration.seed, 1)
-        self.assertEqual(self.registration.team_name, 'Renamed')
+
+    def test_registration_data_cannot_be_edited(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        original_name = self.registration.team_name
+        original_email = self.registration.contact_email
+
+        # Act
+        self.client.patch(
+            self.detail_url,
+            {'team_name': 'Renamed', 'contact_email': 'new@unsa.edu.pe'},
+            format='json',
+        )
+
+        # Assert
+        self.registration.refresh_from_db()
+        self.assertEqual(self.registration.team_name, original_name)
+        self.assertEqual(self.registration.contact_email, original_email)
+
+    def test_put_is_not_allowed(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        response = self.client.put(self.detail_url, {}, format='json')
+
+        # Assert
+        self.assertEqual(
+            response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED
+        )
 
     def test_patch_cannot_change_status_directly(self):
         # Arrange
@@ -182,18 +210,18 @@ class RegistrationViewSetTestCase(APITestCase):
         self.registration.refresh_from_db()
         self.assertEqual(self.registration.status, 'pending')
 
-    def test_patch_invalid_email_returns_400(self):
+    def test_patch_invalid_seed_returns_400(self):
         # Arrange
         self.client.force_authenticate(user=self.admin)
 
         # Act
         response = self.client.patch(
-            self.detail_url, {'contact_email': 'nope'}, format='json'
+            self.detail_url, {'seed': -1}, format='json'
         )
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('contact_email', response.data)
+        self.assertIn('seed', response.data)
 
     def test_destroy(self):
         # Arrange
