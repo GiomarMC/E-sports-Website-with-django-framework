@@ -1,17 +1,38 @@
 from django.contrib import admin
-from django.core.exceptions import ValidationError
+from django.contrib.auth.admin import UserAdmin
+
 from .models import (
-    CustomUser, Game, AdminGame, Team, TeamPlayer, IndividualInscription,
-    Tournament, Match, MatchParticipant, Transmission,
-    MediaContent, ContactInfo
+    AdminGame, ContactInfo, CustomUser, Game, Match, MatchParticipant,
+    MediaContent, Registration, RegistrationMember, SiteSettings, Stage,
+    StageGroup, StageParticipant, Stream, Tournament,
 )
 
 
 @admin.register(CustomUser)
-class CustomUserAdmin(admin.ModelAdmin):
+class CustomUserAdmin(UserAdmin):
     list_display = ('username', 'nickname', 'role', 'email')
     search_fields = ('username', 'nickname', 'email')
     list_filter = ['role']
+    fieldsets = UserAdmin.fieldsets + (
+        ('Esports', {'fields': ('role', 'nickname', 'phone')}),
+    )
+    add_fieldsets = UserAdmin.add_fieldsets + (
+        ('Esports', {'fields': ('role',)}),
+    )
+
+
+@admin.register(SiteSettings)
+class SiteSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        'event_name', 'registration_enabled', 'registration_start',
+        'registration_end'
+        )
+
+    def has_add_permission(self, request):
+        return not SiteSettings.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class AdminGameInline(admin.TabularInline):
@@ -22,37 +43,19 @@ class AdminGameInline(admin.TabularInline):
 
 class TournamentInline(admin.TabularInline):
     model = Tournament
-    extra = 1
-    readonly_fields = ['name', 'start_date', 'status']
+    extra = 0
+    fields = ['name', 'start_date', 'status']
+    show_change_link = True
 
 
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
-    list_display = ('name', 'type_of_game', 'active')
+    list_display = (
+        'name', 'type_of_game', 'min_players', 'max_players', 'active'
+        )
     list_filter = ('type_of_game', 'active')
     search_fields = ('name',)
     inlines = [AdminGameInline, TournamentInline]
-
-    def has_add_permission(self, request):
-        return request.user.is_superadmin()
-
-    def has_delete_permission(self, request, obj=None):
-        return request.user.is_superadmin()
-
-    def get_readonly_fields(self, request, obj=None):
-        if request.user.is_superadmin():
-            return []
-        if request.user.is_admin():
-            return ['name', 'description', 'type_of_game', 'images', 'active']
-        return self.readonly_fields
-
-    def save_model(self, request, obj, form, change):
-        if obj.bases and not obj.bases.name.endswith('.pdf'):
-            raise ValidationError("Bases must be a PDF file")
-        if obj.images and not obj.images.name.lower().endswith(
-                ('.png', '.jpg', '.jpeg')):
-            raise ValidationError("Images must be in PNG, JPG, or JPEG format")
-        super().save_model(request, obj, form, change)
 
 
 @admin.register(AdminGame)
@@ -63,51 +66,82 @@ class AdminGameAdmin(admin.ModelAdmin):
     autocomplete_fields = ['admin', 'game']
 
 
-@admin.register(Team)
-class TeamAdmin(admin.ModelAdmin):
-    list_display = (
-        'name', 'captain', 'game', 'registration_status', 'created_at'
-        )
-    list_filter = ('registration_status', 'game')
-    search_fields = ('name',)
-
-
-@admin.register(TeamPlayer)
-class TeamPlayerAdmin(admin.ModelAdmin):
-    list_display = ('user', 'team')
-
-
-@admin.register(IndividualInscription)
-class IndividualInscriptionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'game', 'registration_status', 'created_at')
-    list_filter = ('registration_status', 'game')
+class StageInline(admin.TabularInline):
+    model = Stage
+    extra = 0
+    fields = ['order', 'name', 'stage_type', 'status']
+    readonly_fields = ['status']
+    show_change_link = True
 
 
 @admin.register(Tournament)
 class TournamentAdmin(admin.ModelAdmin):
-    list_display = ('name', 'game', 'start_date', 'status')
+    list_display = (
+        'name', 'game', 'start_date', 'status', 'fee_per_player',
+        'registration_enabled'
+        )
     list_filter = ('status', 'game')
+    search_fields = ('name',)
+    inlines = [StageInline]
+
+
+class RegistrationMemberInline(admin.TabularInline):
+    model = RegistrationMember
+    extra = 0
+
+
+@admin.register(Registration)
+class RegistrationAdmin(admin.ModelAdmin):
+    list_display = (
+        'display_name', 'tournament', 'status', 'is_active', 'amount_due',
+        'created_at'
+        )
+    list_filter = ('status', 'is_active', 'tournament__game')
+    search_fields = ('team_name', 'members__nickname', 'members__full_name')
+    readonly_fields = ('code', 'created_at', 'reviewed_at', 'reviewed_by')
+    inlines = [RegistrationMemberInline]
+
+
+class StageGroupInline(admin.TabularInline):
+    model = StageGroup
+    extra = 0
+
+
+class StageParticipantInline(admin.TabularInline):
+    model = StageParticipant
+    extra = 0
+
+
+@admin.register(Stage)
+class StageAdmin(admin.ModelAdmin):
+    list_display = ('name', 'tournament', 'order', 'stage_type', 'status')
+    list_filter = ('stage_type', 'status', 'tournament')
+    inlines = [StageGroupInline, StageParticipantInline]
+
+
+class MatchParticipantInline(admin.TabularInline):
+    model = MatchParticipant
+    extra = 0
 
 
 @admin.register(Match)
 class MatchAdmin(admin.ModelAdmin):
-    list_display = ('tournament', 'round', 'date', 'status')
-    list_filter = ('status', 'tournament')
+    list_display = (
+        '__str__', 'stage', 'round', 'scheduled_at', 'status', 'winner'
+        )
+    list_filter = ('status', 'stage__tournament')
+    inlines = [MatchParticipantInline]
 
 
-@admin.register(MatchParticipant)
-class MatchParticipantAdmin(admin.ModelAdmin):
-    list_display = ('match', 'team', 'user')
-
-
-@admin.register(Transmission)
-class TransmissionAdmin(admin.ModelAdmin):
-    list_display = ('match', 'platform', 'url')
+@admin.register(Stream)
+class StreamAdmin(admin.ModelAdmin):
+    list_display = ('title', 'platform', 'game', 'match', 'is_live')
+    list_filter = ('platform', 'is_live', 'game')
 
 
 @admin.register(MediaContent)
 class MediaContentAdmin(admin.ModelAdmin):
-    list_display = ('tittle', 'type', 'uploaded_at')
+    list_display = ('title', 'type', 'uploaded_at')
 
 
 @admin.register(ContactInfo)
