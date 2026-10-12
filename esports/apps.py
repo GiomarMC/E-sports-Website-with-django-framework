@@ -6,4 +6,4 @@ class EsportsConfig(AppConfig):
     name = 'esports'
 
     def ready(self):
-        import esports.signals
+        import esports.signals  # noqa: F401

@@ -1,25 +1,27 @@
+from django.conf import settings
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
-from django.conf import settings
+
 from .models import CustomUser
 
 
 @receiver(post_migrate)
 def create_default_superadmin(sender, **kwargs):
-    username = getattr(settings, 'DEFAULT_SUPERADMIN_USERNAME')
-    password = getattr(settings, 'DEFAULT_SUPERADMIN_PASSWORD')
+    # post_migrate is sent once per installed app: only react to ours.
+    if sender.name != 'esports':
+        return
 
-    superadmin, created = CustomUser.objects.get_or_create(
-        username=username,
-        defaults={'role': 'superadmin'}
-    )
+    username = getattr(settings, 'DEFAULT_SUPERADMIN_USERNAME', '')
+    password = getattr(settings, 'DEFAULT_SUPERADMIN_PASSWORD', '')
+    if not username or not password:
+        return
 
-    if created:
-        superadmin.set_password(password)
-        superadmin.save()
-        print(f"Default superadmin created: {username}")
-    else:
-        superadmin.set_password(password)
-        superadmin.role = 'superadmin'
-        superadmin.save()
-        print(f"Default superadmin updated: {username}")
+    # Only create it: the password must not be reset on every migrate,
+    # otherwise any password change would be lost on the next deploy.
+    if CustomUser.objects.filter(username=username).exists():
+        return
+
+    superadmin = CustomUser(username=username, role='superadmin')
+    superadmin.set_password(password)
+    superadmin.save()
+    print(f"Default superadmin created: {username}")
