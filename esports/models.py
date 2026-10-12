@@ -29,13 +29,9 @@ class CustomUser(AbstractUser):
         return f"{self.username} - {self.get_role_display()}"
 
     def save(self, *args, **kwargs):
-        # Django superusers (createsuperuser) are platform superadmins and
-        # superadmins can always enter the Django admin site.
+        # Users created with `manage.py createsuperuser` are superadmins.
         if self.is_superuser:
             self.role = 'superadmin'
-        if self.role == 'superadmin':
-            self.is_staff = True
-            self.is_superuser = True
         super().save(*args, **kwargs)
 
     def is_admin(self):

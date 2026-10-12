@@ -15,14 +15,13 @@ from esports.tests.factories import (
 
 class CustomUserTestCase(APITestCase):
 
-    def test_superadmin_is_staff_and_superuser(self):
+    def test_superadmin_role(self):
         # Arrange / Act
         user = SuperAdminFactory()
 
         # Assert
-        self.assertTrue(user.is_staff)
-        self.assertTrue(user.is_superuser)
         self.assertTrue(user.is_superadmin())
+        self.assertTrue(user.is_admin())
 
     def test_createsuperuser_becomes_superadmin(self):
         # Act

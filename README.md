@@ -45,6 +45,8 @@ when empty) and there are slots left.
 ## Main endpoints
 
 Interactive documentation: **`/api/docs/`** (Swagger) and `/api/redoc/`.
+The whole administration (superadmin and game admins) is done through these
+endpoints; the Django admin site is not used.
 
 | Endpoint | Access |
 |---|---|
