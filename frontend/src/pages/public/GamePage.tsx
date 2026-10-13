@@ -12,6 +12,7 @@ import {
   UsersThree,
 } from '@phosphor-icons/react'
 import { AnimatePresence, motion } from 'motion/react'
+import { Countdown } from '../../components/countdown'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
@@ -38,11 +39,14 @@ import {
   useSchedule,
   useStages,
   useStandings,
+  useSettings,
   useStreams,
   useTournaments,
 } from '../../lib/queries'
 import type { Game, Stage, Tournament } from '../../lib/types'
+import { tournamentMilestone } from '../../lib/countdown'
 import { currentTournament, groupByDay } from '../../lib/tournament'
+import { useNow } from '../../lib/useNow'
 
 type Tab = 'resumen' | 'reglas' | 'equipos' | 'partidas' | 'cronograma' | 'stream'
 
@@ -146,6 +150,9 @@ function GameHero({
   tournaments: Tournament[]
   onSelect: (id: number) => void
 }) {
+  const now = useNow(30000)
+  const { data: settings } = useSettings()
+  const milestone = tournament && tournamentMilestone(tournament, now, settings)
   return (
     <section className="relative overflow-hidden">
       <div className="absolute inset-0">
@@ -199,6 +206,25 @@ function GameHero({
             )}
           </div>
         </motion.div>
+        {milestone && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, type: 'spring', stiffness: 110, damping: 20 }}
+            className="self-end rounded-2xl border border-white/10 bg-ink-950/60 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:p-6 md:justify-self-end"
+          >
+            <p
+              className={cx(
+                'text-xs font-semibold uppercase tracking-[0.2em]',
+                milestone.kind === 'closes' ? 'text-warn' : milestone.kind === 'starts' ? 'text-win' : 'text-ink-300',
+              )}
+            >
+              {milestone.label}
+            </p>
+            <Countdown key={milestone.target} target={milestone.target} className="mt-4" />
+            <p className="mt-4 text-sm text-ink-400">{formatDate(milestone.target, true)}</p>
+          </motion.div>
+        )}
       </div>
     </section>
   )
@@ -237,6 +263,9 @@ function stageDetails(stage: Stage) {
 
 function Overview({ game, tournament }: { game: Game; tournament?: Tournament }) {
   const stages = useStages(tournament?.id ?? 0)
+  const now = useNow(30000)
+  const startsAt = tournament?.registration.starts_at
+  const notYet = !!startsAt && Date.parse(startsAt) > now
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_380px]">
       <div className="space-y-10">
@@ -308,9 +337,11 @@ function Overview({ game, tournament }: { game: Game; tournament?: Tournament })
             </InfoRow>
             <InfoRow label="Registro">
               <span className={tournament.registration.is_open ? 'text-win' : 'text-ink-300'}>
-                {tournament.registration.is_open ? 'Abierto' : 'Cerrado'}
+                {tournament.registration.is_open ? 'Abierto' : notYet ? 'Próximamente' : 'Cerrado'}
               </span>
-              {tournament.registration.ends_at && (
+              {notYet ? (
+                <span className="block text-xs text-ink-400">Abre {formatDate(tournament.registration.starts_at, true)}</span>
+              ) : tournament.registration.ends_at && (
                 <span className="block text-xs text-ink-400">Hasta {formatDate(tournament.registration.ends_at, true)}</span>
               )}
             </InfoRow>
