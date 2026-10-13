@@ -84,7 +84,8 @@ class SiteSettings(models.Model):
 def validate_date_range(start, end):
     if start and end and start >= end:
         raise ValidationError(
-            {'registration_end': 'End date must be after start date.'}
+            {'registration_end':
+                'La fecha de fin debe ser posterior al inicio.'}
             )
 
 
@@ -138,14 +139,16 @@ def validate_team_size(type_of_game, min_players, max_players):
     if type_of_game == 'individual':
         if min_players != 1 or max_players != 1:
             errors['max_players'] = (
-                'Individual games must have exactly 1 player.'
+                'Los juegos individuales tienen exactamente 1 jugador.'
                 )
     elif type_of_game == 'team':
         if min_players < 2:
-            errors['min_players'] = 'Team games need at least 2 players.'
+            errors['min_players'] = (
+                'Los juegos por equipos necesitan al menos 2 jugadores.'
+                )
         elif max_players < min_players:
             errors['max_players'] = (
-                'Max players must be greater or equal than min players.'
+                'El máximo de jugadores no puede ser menor que el mínimo.'
                 )
     return errors
 
@@ -220,24 +223,24 @@ class Tournament(models.Model):
         """Returns (is_open, reason)."""
         site = site_settings or SiteSettings.load()
         if not self.game.active:
-            return False, 'The game is not active.'
+            return False, 'El juego no está activo.'
         if self.status != 'upcoming':
-            return False, 'The tournament is not accepting registrations.'
+            return False, 'El torneo ya no acepta inscripciones.'
         if not site.registration_enabled:
-            return False, 'Registrations are globally disabled.'
+            return False, 'Las inscripciones están deshabilitadas en general.'
         if not self.registration_enabled:
-            return False, 'Registrations are disabled for this tournament.'
+            return False, 'Las inscripciones de este torneo están cerradas.'
         start, end = self.registration_window(site)
         now = timezone.now()
         if start and now < start:
-            return False, 'Registrations have not started yet.'
+            return False, 'Las inscripciones aún no empiezan.'
         if end and now > end:
-            return False, 'Registrations are closed.'
+            return False, 'El periodo de inscripción terminó.'
         if (self.max_registrations is not None
                 and self.active_registrations().count()
                 >= self.max_registrations):
-            return False, 'There are no slots available.'
-        return True, 'Registrations are open.'
+            return False, 'No quedan cupos disponibles.'
+        return True, 'Inscripciones abiertas.'
 
     def calculate_fee(self, players):
         return self.fee_per_player * players
@@ -332,6 +335,7 @@ class Stage(models.Model):
         ('round_robin', 'Groups (round robin)'),
         ('single_elimination', 'Single elimination'),
         ('free_for_all', 'Free for all (points)'),
+        ('double_elimination', 'Double elimination'),
         ('manual', 'Manual'),
     )
     STATUS_CHOICES = (
@@ -351,11 +355,24 @@ class Stage(models.Model):
     best_of = models.PositiveSmallIntegerField(
         default=1, validators=[MinValueValidator(1)]
         )
+    # Elimination: the final can be longer (e.g. rounds Bo1, final Bo3).
+    # In double elimination it is the best of of the grand final.
+    final_best_of = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1)]
+        )
+    # Double elimination: best of of the lower bracket (empty = best_of).
+    lower_best_of = models.PositiveSmallIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1)]
+        )
     number_of_groups = models.PositiveSmallIntegerField(
         default=1, validators=[MinValueValidator(1)]
         )
     # How many participants of each group qualify to the next stage.
     advance_per_group = models.PositiveSmallIntegerField(default=0)
+    # When the next stage is a double elimination: the following places of
+    # each group start in the lower bracket (e.g. 1st-2nd upper, 3rd-4th
+    # lower).
+    lower_advance_per_group = models.PositiveSmallIntegerField(default=0)
     # Round robin: 1 = single round, 2 = home and away.
     round_robin_legs = models.PositiveSmallIntegerField(
         default=1, validators=[MinValueValidator(1)]
@@ -380,6 +397,13 @@ class Stage(models.Model):
 
     def __str__(self):
         return f"{self.tournament.name} - {self.name}"
+
+    def best_of_for(self, label):
+        if label in ['Final', 'Grand Final'] and self.final_best_of:
+            return self.final_best_of
+        if label.startswith('Lower') and self.lower_best_of:
+            return self.lower_best_of
+        return self.best_of
 
     @property
     def allows_draws(self):
@@ -420,6 +444,8 @@ class StageParticipant(models.Model):
         related_name='participants'
         )
     seed = models.PositiveIntegerField(null=True, blank=True)
+    # Double elimination: starts in the lower bracket.
+    starts_in_lower = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['stage', 'seed']
@@ -454,6 +480,14 @@ class Match(models.Model):
     status = models.CharField(
         max_length=10, choices=STATUS_CHOICES, default='scheduled'
         )
+    BRACKET_CHOICES = (
+        ('upper', 'Upper bracket'),
+        ('lower', 'Lower bracket'),
+        ('final', 'Grand final'),
+    )
+    # Double elimination: bracket the match belongs to.
+    bracket = models.CharField(max_length=5, choices=BRACKET_CHOICES,
+                               blank=True)
     is_bye = models.BooleanField(default=False)
     winner = models.ForeignKey(
         Registration, on_delete=models.SET_NULL, null=True, blank=True,
@@ -488,16 +522,25 @@ class Match(models.Model):
         title = self.label or f"Round {self.round}"
         return f"Match {self.id} - {title} - {' vs '.join(names)}"
 
+    @property
+    def can_draw(self):
+        """A tie is only possible in leagues with an even best of (e.g. Bo2
+        ending 1-1): with Bo1, Bo3, Bo5... there is always a winner."""
+        return (
+            self.stage.allows_draws
+            and self.best_of % 2 == 0
+            and not self.next_match_id
+        )
+
     def clean(self):
         if bool(self.next_match_id) != bool(self.next_match_slot):
             raise ValidationError(
-                'next_match and next_match_slot must be set together.'
+                'next_match y next_match_slot van juntos.'
                 )
         if bool(self.loser_next_match_id) != bool(
                 self.loser_next_match_slot):
             raise ValidationError(
-                'loser_next_match and loser_next_match_slot must be set '
-                'together.'
+                'loser_next_match y loser_next_match_slot van juntos.'
                 )
 
 
