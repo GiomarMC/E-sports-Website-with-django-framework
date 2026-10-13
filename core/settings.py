@@ -161,7 +161,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'es'
 
 TIME_ZONE = env.str('TIME_ZONE', default='America/Lima')
 
@@ -226,3 +226,5 @@ SWAGGER_SETTINGS = {
 if len(sys.argv) > 1 and sys.argv[1] == 'test':
     # Hashing passwords is slow on purpose: tests do not need it.
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+    # Tests create their own users: ignore the default superadmin of .env.
+    DEFAULT_SUPERADMIN_USERNAME = ''

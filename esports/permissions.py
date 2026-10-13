@@ -45,7 +45,7 @@ class IsAdminOrSuperAdmin(BasePermission):
 class IsGameAdmin(BasePermission):
     """Superadmins manage everything; game admins only manage the objects
     of the games assigned to them through AdminGame."""
-    message = 'You are not an administrator of this game.'
+    message = 'No eres administrador de este juego.'
 
     def has_permission(self, request, view):
         return is_admin_user(request.user)
