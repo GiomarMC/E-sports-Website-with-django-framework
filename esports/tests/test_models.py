@@ -116,7 +116,7 @@ class TournamentRegistrationStateTestCase(APITestCase):
 
         # Assert
         self.assertFalse(is_open)
-        self.assertIn('globally', reason)
+        self.assertIn('en general', reason)
 
     def test_closed_when_tournament_disabled(self):
         # Arrange
@@ -138,7 +138,7 @@ class TournamentRegistrationStateTestCase(APITestCase):
 
         # Assert
         self.assertFalse(is_open)
-        self.assertIn('closed', reason)
+        self.assertIn('terminó', reason)
 
     def test_tournament_window_overrides_global(self):
         # Arrange
@@ -165,7 +165,7 @@ class TournamentRegistrationStateTestCase(APITestCase):
 
         # Assert
         self.assertFalse(is_open)
-        self.assertIn('not started', reason)
+        self.assertIn('aún no empiezan', reason)
 
     def test_closed_when_full(self):
         # Arrange
@@ -178,7 +178,7 @@ class TournamentRegistrationStateTestCase(APITestCase):
 
         # Assert
         self.assertFalse(is_open)
-        self.assertIn('slots', reason)
+        self.assertIn('cupos', reason)
 
     def test_rejected_registrations_do_not_use_slots(self):
         # Arrange

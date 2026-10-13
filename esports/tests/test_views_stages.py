@@ -138,6 +138,65 @@ class StageViewSetTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(len(response.data['participants']), 4)
 
+    def test_draw_preview_does_not_save(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        response = self.client.post(
+            self.action_url('draw'), {'preview': True}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['preview'])
+        self.assertEqual(len(response.data['seeding']), 8)
+        self.assertEqual(len(response.data['bracket']), 2)
+        self.assertFalse(self.stage.matches.exists())
+        self.assertFalse(self.stage.participants.exists())
+
+    def test_confirming_a_preview_keeps_its_groups(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        preview = self.client.post(
+            self.action_url('draw'), {'preview': True}, format='json'
+        ).data
+        groups = {
+            g['name']: {p['id'] for p in g['participants']}
+            for g in preview['groups']
+        }
+
+        # Act
+        response = self.client.post(
+            self.action_url('draw'),
+            {'registration_ids': preview['seeding'], 'shuffle': False},
+            format='json',
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        saved = {
+            g['name']: {p['id'] for p in g['participants']}
+            for g in response.data['groups']
+        }
+        self.assertEqual(saved, groups)
+
+    def test_changing_best_of_updates_drawn_matches(self):
+        # Arrange
+        services.draw_stage(self.stage)
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        response = self.client.patch(
+            self.detail_url, {'best_of': 3}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            set(self.stage.matches.values_list('best_of', flat=True)), {3}
+        )
+
     def test_draw_without_auth_returns_401(self):
         # Act
         response = self.client.post(self.action_url('draw'))
@@ -169,6 +228,50 @@ class StageViewSetTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', response.data)
+
+    def test_elimination_draw_with_byes_returns_400(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        stage = StageFactory(
+            tournament=TournamentFactory(game=self.tournament.game),
+            stage_type='single_elimination',
+        )
+        confirmed_registrations(stage.tournament, 6)
+
+        # Act
+        response = self.client.post(
+            self.action_url('draw', stage), {'preview': True}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('liga', str(response.data['detail']))
+
+    def test_double_elimination_preview_keeps_lower_teams(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        stage = StageFactory(
+            tournament=TournamentFactory(game=self.tournament.game),
+            stage_type='double_elimination',
+        )
+        regs = confirmed_registrations(stage.tournament, 8)
+        upper = [r.id for r in regs[:4]]
+        lower = [r.id for r in regs[4:]]
+
+        # Act
+        response = self.client.post(self.action_url('draw', stage), {
+            'registration_ids': upper, 'lower_registration_ids': lower,
+            'shuffle': False, 'preview': True,
+        }, format='json')
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['seeding'], upper)
+        self.assertEqual(response.data['lower_seeding'], lower)
+        self.assertEqual(
+            [s['bracket'] for s in response.data['bracket']],
+            ['upper', 'lower', 'final'],
+        )
 
     def test_draw_nonexistent_returns_404(self):
         # Arrange

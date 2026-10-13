@@ -1,3 +1,4 @@
+import random
 from collections import Counter
 from datetime import timedelta
 
@@ -79,26 +80,61 @@ class SingleEliminationTestCase(APITestCase):
         self.assertEqual(final.label, 'Final')
         self.assertEqual(final.winner_feeders.count(), 2)
 
-    def test_draw_with_byes_advances_top_seeds(self):
+    def test_final_uses_final_best_of(self):
         # Arrange
-        regs = confirmed_registrations(self.tournament, 6)
+        self.stage.best_of = 1
+        self.stage.final_best_of = 5
+        self.stage.save()
+        confirmed_registrations(self.tournament, 8)
 
         # Act
         services.draw_stage(self.stage, shuffle=False)
 
         # Assert
-        byes = self.stage.matches.filter(is_bye=True)
-        self.assertEqual(byes.count(), 2)
+        final = self.stage.matches.get(label='Final')
+        self.assertEqual(final.best_of, 5)
         self.assertEqual(
-            {m.winner_id for m in byes}, {regs[0].id, regs[1].id}
+            set(self.stage.matches.exclude(label='Final').values_list(
+                'best_of', flat=True)),
+            {1},
         )
-        round_two = self.stage.matches.filter(round=2)
-        placed = {
-            p.registration_id
-            for m in round_two for p in m.participants.all()
-            if p.registration_id
-        }
-        self.assertEqual(placed, {regs[0].id, regs[1].id})
+
+    def test_apply_best_of_updates_pending_matches_only(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 4)
+        services.draw_stage(self.stage, shuffle=False)
+        played = play(self.stage.matches.filter(round=1).first())
+        self.stage.best_of = 3
+        self.stage.final_best_of = 5
+        self.stage.save()
+
+        # Act
+        services.apply_best_of(self.stage)
+
+        # Assert
+        played.refresh_from_db()
+        self.assertEqual(played.best_of, 1)
+        self.assertEqual(self.stage.matches.get(label='Final').best_of, 5)
+        self.assertEqual(
+            self.stage.matches.filter(round=1, status='scheduled').get()
+            .best_of, 3,
+        )
+
+    def test_draw_rejects_counts_that_are_not_a_power_of_two(self):
+        # Arrange: 6 teams would need byes (direct passes).
+        confirmed_registrations(self.tournament, 6)
+
+        # Act / Assert
+        with self.assertRaises(services.TournamentError):
+            services.draw_stage(self.stage)
+        self.assertFalse(self.stage.matches.exists())
+
+    def test_power_of_two_helper(self):
+        # Act / Assert
+        self.assertEqual(
+            [n for n in range(1, 34) if services.is_power_of_two(n)],
+            [2, 4, 8, 16, 32],
+        )
 
     def test_only_confirmed_and_active_registrations_are_drawn(self):
         # Arrange
@@ -365,9 +401,40 @@ class RoundRobinTestCase(APITestCase):
         with self.assertRaises(services.TournamentError):
             services.draw_stage(self.stage)
 
+    def test_odd_best_of_has_no_draws(self):
+        # Arrange
+        self.stage.number_of_groups = 1
+        self.stage.save()
+        services.draw_stage(self.stage)
+        match = self.stage.matches.first()
+        a, b = two_player_match_ids(match)
+
+        # Act / Assert
+        self.assertFalse(match.can_draw)
+        with self.assertRaises(services.TournamentError):
+            services.record_result(match, {a: 1, b: 1})
+        with self.assertRaises(services.TournamentError):
+            services.record_result(match, draw=True)
+
+    def test_explicit_draw_in_even_best_of(self):
+        # Arrange
+        self.stage.number_of_groups = 1
+        self.stage.best_of = 2
+        self.stage.save()
+        services.draw_stage(self.stage)
+        match = self.stage.matches.first()
+
+        # Act
+        match = services.record_result(match, draw=True)
+
+        # Assert
+        self.assertIsNone(match.winner)
+        self.assertEqual(match.status, 'completed')
+
     def test_draws_allowed_and_standings_points(self):
         # Arrange
         self.stage.number_of_groups = 1
+        self.stage.best_of = 2
         self.stage.save()
         services.draw_stage(self.stage, shuffle=False)
         matches = list(self.stage.matches.all())
@@ -412,6 +479,66 @@ class RoundRobinTestCase(APITestCase):
         )
         self.assertEqual(seeds[:2], first_places)
 
+    def test_finishing_groups_draws_the_next_stage_automatically(self):
+        # Arrange
+        services.draw_stage(self.stage, shuffle=False)
+        playoffs = StageFactory(
+            tournament=self.tournament, order=2,
+            stage_type='single_elimination',
+        )
+
+        # Act
+        for match in self.stage.matches.all():
+            play(match)
+
+        # Assert
+        self.assertEqual(playoffs.participants.count(), 4)
+        self.assertEqual(playoffs.matches.count(), 3)
+        first_places = {
+            group['standings'][0]['registration'].id
+            for group in services.stage_standings(self.stage)
+        }
+        # 1st of A and 1st of B start in different semifinals.
+        for semi in playoffs.matches.filter(round=1):
+            self.assertLessEqual(
+                len(first_places & set(two_player_match_ids(semi))), 1
+            )
+
+    def test_resetting_a_group_result_clears_the_next_stage(self):
+        # Arrange
+        services.draw_stage(self.stage, shuffle=False)
+        playoffs = StageFactory(
+            tournament=self.tournament, order=2,
+            stage_type='single_elimination',
+        )
+        for match in self.stage.matches.all():
+            play(match)
+
+        # Act
+        services.reset_result(self.stage.matches.first())
+
+        # Assert
+        self.assertFalse(playoffs.matches.exists())
+
+    def test_one_per_group_creates_the_final(self):
+        # Arrange
+        self.stage.advance_per_group = 1
+        self.stage.save()
+        services.draw_stage(self.stage, shuffle=False)
+        final_stage = StageFactory(
+            tournament=self.tournament, order=2,
+            stage_type='single_elimination', best_of=1, final_best_of=3,
+        )
+
+        # Act
+        for match in self.stage.matches.all():
+            play(match)
+
+        # Assert
+        final = final_stage.matches.get()
+        self.assertEqual(final.label, 'Final')
+        self.assertEqual(final.best_of, 3)
+
     def test_next_stage_needs_previous_finished(self):
         # Arrange
         services.draw_stage(self.stage)
@@ -423,6 +550,194 @@ class RoundRobinTestCase(APITestCase):
         # Act / Assert
         with self.assertRaises(services.TournamentError):
             services.draw_stage(playoffs)
+
+
+class LeagueAndFinalTestCase(APITestCase):
+
+    def test_top_two_of_the_league_play_the_final(self):
+        # Arrange
+        tournament = TournamentFactory()
+        league = StageFactory(
+            tournament=tournament, stage_type='round_robin',
+            advance_per_group=2, best_of=1,
+        )
+        final_stage = StageFactory(
+            tournament=tournament, order=2, stage_type='single_elimination',
+            best_of=5, final_best_of=5,
+        )
+        confirmed_registrations(tournament, 6)
+        services.draw_stage(league)
+        for match in league.matches.all():
+            play(match)
+
+        # Act
+        services.draw_stage(final_stage, shuffle=False)
+
+        # Assert
+        final = final_stage.matches.get()
+        self.assertEqual(final.label, 'Final')
+        self.assertEqual(final.best_of, 5)
+        table = services.stage_standings(league)[0]['standings']
+        self.assertEqual(
+            set(two_player_match_ids(final)),
+            {table[0]['registration'].id, table[1]['registration'].id},
+        )
+
+
+def play_everything(stage):
+    """Plays every playable match (random winner) until none is left."""
+    rng = random.Random(7)
+    while True:
+        playable = [
+            m for m in stage.matches.filter(
+                status='scheduled', is_bye=False
+            ).prefetch_related('participants')
+            if all(p.registration_id for p in m.participants.all())
+        ]
+        if not playable:
+            return
+        for match in playable:
+            ids = two_player_match_ids(match)
+            services.record_result(match, winner_id=rng.choice(ids))
+
+
+class DoubleEliminationTestCase(APITestCase):
+
+    def setUp(self):
+        self.tournament = TournamentFactory()
+        self.stage = StageFactory(
+            tournament=self.tournament, stage_type='double_elimination',
+            best_of=1, lower_best_of=3, final_best_of=5,
+        )
+
+    def test_everyone_starts_in_upper(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 8)
+
+        # Act
+        services.draw_stage(self.stage, shuffle=False)
+
+        # Assert: 2N - 2 matches (no grand final reset).
+        matches = self.stage.matches
+        self.assertEqual(matches.count(), 14)
+        self.assertEqual(matches.filter(bracket='upper').count(), 7)
+        self.assertEqual(matches.filter(bracket='lower').count(), 6)
+        self.assertEqual(matches.filter(bracket='final').count(), 1)
+        self.assertEqual(
+            matches.get(label='Upper Final').next_match.label, 'Grand Final'
+        )
+
+    def test_best_of_per_bracket(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 8)
+
+        # Act
+        services.draw_stage(self.stage, shuffle=False)
+
+        # Assert
+        matches = self.stage.matches
+        self.assertEqual(
+            set(matches.filter(bracket='upper').values_list(
+                'best_of', flat=True)), {1})
+        self.assertEqual(
+            set(matches.filter(bracket='lower').values_list(
+                'best_of', flat=True)), {3})
+        self.assertEqual(matches.get(bracket='final').best_of, 5)
+
+    def test_upper_loser_drops_to_lower(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 8)
+        services.draw_stage(self.stage, shuffle=False)
+        match = self.stage.matches.get(bracket='upper', round=1, position=1)
+        a, b = two_player_match_ids(match)
+
+        # Act
+        services.record_result(match, winner_id=a)
+
+        # Assert
+        match.refresh_from_db()
+        self.assertEqual(match.loser_next_match.bracket, 'lower')
+        self.assertIn(b, two_player_match_ids(match.loser_next_match))
+        self.assertIn(a, two_player_match_ids(match.next_match))
+
+    def test_whole_bracket_can_be_played(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 8)
+        services.draw_stage(self.stage)
+
+        # Act
+        play_everything(self.stage)
+
+        # Assert
+        self.stage.refresh_from_db()
+        self.assertEqual(self.stage.status, 'completed')
+        self.assertFalse(
+            self.stage.matches.exclude(status='completed').exists()
+        )
+        final = self.stage.matches.get(bracket='final')
+        self.assertIsNotNone(final.winner)
+
+    def test_groups_send_teams_to_upper_and_lower(self):
+        # Arrange: 4 groups, 1st-2nd to upper, 3rd-4th to lower.
+        self.stage.order = 2
+        self.stage.save()
+        groups = StageFactory(
+            tournament=self.tournament, stage_type='round_robin',
+            number_of_groups=4, advance_per_group=2,
+            lower_advance_per_group=2,
+        )
+        confirmed_registrations(self.tournament, 16)
+        services.draw_stage(groups)
+
+        # Act: finishing the groups draws the playoffs automatically.
+        play_everything(groups)
+
+        # Assert
+        upper = self.stage.participants.filter(starts_in_lower=False)
+        lower = self.stage.participants.filter(starts_in_lower=True)
+        self.assertEqual(upper.count(), 8)
+        self.assertEqual(lower.count(), 8)
+        self.assertEqual(self.stage.matches.count(), 22)
+        first_round_lower = {
+            p.registration_id
+            for m in self.stage.matches.filter(bracket='lower', round=1)
+            for p in m.participants.all()
+        }
+        self.assertEqual(
+            first_round_lower,
+            set(lower.values_list('registration_id', flat=True)),
+        )
+        play_everything(self.stage)
+        self.assertIsNotNone(self.stage.matches.get(bracket='final').winner)
+
+    def test_upper_must_be_a_power_of_two(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 6)
+
+        # Act / Assert
+        with self.assertRaises(services.TournamentError):
+            services.draw_stage(self.stage)
+
+    def test_lower_size_must_fit(self):
+        # Arrange
+        regs = confirmed_registrations(self.tournament, 7)
+
+        # Act / Assert: 4 in upper and 3 in lower does not fit.
+        with self.assertRaises(services.TournamentError):
+            services.draw_stage(
+                self.stage, [r.id for r in regs[:4]], shuffle=False,
+                lower_registration_ids=[r.id for r in regs[4:]],
+            )
+
+    def test_draws_are_not_allowed(self):
+        # Arrange
+        confirmed_registrations(self.tournament, 4)
+        services.draw_stage(self.stage)
+        match = self.stage.matches.filter(
+            bracket='upper', round=1).first()
+
+        # Act / Assert
+        self.assertFalse(match.can_draw)
 
 
 class FreeForAllTestCase(APITestCase):

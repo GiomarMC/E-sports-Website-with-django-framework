@@ -391,11 +391,12 @@ class ManualMatchTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('registration_ids', response.data)
 
-    def test_manual_match_allows_draw(self):
+    def test_manual_match_with_even_best_of_allows_draw(self):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         match = self.client.post(self.list_url, {
             'stage': self.stage.pk,
+            'best_of': 2,
             'registration_ids': [self.regs[0].id, self.regs[1].id],
         }, format='json').data
         url = reverse('matches-result', kwargs={'pk': match['id']})
@@ -410,14 +411,30 @@ class ManualMatchTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data['winner'])
 
+    def test_draw_flag_in_odd_best_of_returns_400(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        match = self.client.post(self.list_url, {
+            'stage': self.stage.pk,
+            'registration_ids': [self.regs[0].id, self.regs[1].id],
+        }, format='json').data
+        url = reverse('matches-result', kwargs={'pk': match['id']})
+
+        # Act
+        response = self.client.post(url, {'draw': True}, format='json')
+
+        # Assert
+        self.assertFalse(match['can_draw'])
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class TournamentScheduleTestCase(APITestCase):
 
-    def test_schedule_is_ordered_by_date_and_hides_byes(self):
+    def test_schedule_is_ordered_by_date(self):
         # Arrange
         tournament = TournamentFactory()
         stage = StageFactory(tournament=tournament)
-        confirmed_registrations(tournament, 3)
+        confirmed_registrations(tournament, 4)
         services.draw_stage(stage, shuffle=False)
         start = timezone.now()
         services.schedule_stage(stage, start, 60)
@@ -428,6 +445,6 @@ class TournamentScheduleTestCase(APITestCase):
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(len(response.data), 3)
         dates = [m['scheduled_at'] for m in response.data]
         self.assertEqual(dates, sorted(dates))
