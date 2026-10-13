@@ -34,10 +34,12 @@ export function hasScore(match: Match) {
 }
 
 export const BOX_W = 232
-// Height of a compact match box plus room for the date / label below it.
-const BOX_H = 74
+/** Height of a bracket match box (two 32px lines, divider and border). */
+export const MATCH_H = 67
+// Match box plus room for the date / label below it.
+const BOX_H = MATCH_H + 20
 export const GAP_X = 56
-const GAP_Y = 36
+const GAP_Y = 22
 
 interface Placed {
   match: Match
@@ -69,9 +71,9 @@ export function layoutBracket(rounds: BracketSection['rounds']) {
     const target = p.match.next_match ? placed.get(p.match.next_match) : undefined
     if (!target) return []
     const x1 = p.x + BOX_W
-    const y1 = p.y + BOX_H / 2
+    const y1 = p.y + MATCH_H / 2
     const x2 = target.x
-    const y2 = target.y + BOX_H / 2
+    const y2 = target.y + MATCH_H / 2
     const mid = x1 + (x2 - x1) / 2
     return [{ id: p.match.id, d: `M${x1} ${y1} H${mid} V${y2} H${x2}`, done: p.match.status === 'completed' && !p.match.is_bye }]
   })

@@ -513,7 +513,11 @@ function StageView({ stage }: { stage: Stage }) {
                   : 'space-y-4'
               }
             >
-              <GroupTable group={group} advance={stage.advance_per_group} freeForAll={stage.stage_type === 'free_for_all'} />
+              <GroupTable
+                group={group}
+                advance={stage.advance_per_group}
+                lowerAdvance={stage.lower_advance_per_group}
+                freeForAll={stage.stage_type === 'free_for_all'} />
               <GroupMatches
                 matches={
                   bracket.data
@@ -549,10 +553,10 @@ function Schedule({ tournament }: { tournament: Tournament }) {
     <div className="space-y-10">
       {groupByDay(schedule.data).map(([day, matches]) => (
         <section key={day}>
-          <h3 className="mb-3 font-display text-lg font-semibold capitalize text-ink-300">
+          <h3 className="mb-3 font-display text-lg font-semibold text-ink-300 first-letter:uppercase">
             {day === 'none' ? 'Sin fecha asignada' : formatDay(matches[0].scheduled_at!)}
           </h3>
-          <div className="grid gap-3">
+          <div className="grid gap-3 lg:grid-cols-2">
             {matches.map((match) => (
               <MatchCard key={match.id} match={match} />
             ))}

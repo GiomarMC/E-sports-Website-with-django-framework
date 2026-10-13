@@ -722,7 +722,11 @@ function StageVisual({ stage, onMatch }: { stage: Stage; onMatch: (match: Match)
           key={group.group_id ?? 'all'}
           className={single ? 'grid gap-6 xl:col-span-2 xl:grid-cols-2 xl:items-start' : 'space-y-4'}
         >
-          <GroupTable group={group} advance={stage.advance_per_group} freeForAll={stage.stage_type === 'free_for_all'} />
+          <GroupTable
+                group={group}
+                advance={stage.advance_per_group}
+                lowerAdvance={stage.lower_advance_per_group}
+                freeForAll={stage.stage_type === 'free_for_all'} />
           <GroupMatches
             onMatchClick={onMatch}
             matches={

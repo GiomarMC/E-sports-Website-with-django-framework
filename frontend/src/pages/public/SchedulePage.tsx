@@ -75,10 +75,10 @@ export default function SchedulePage() {
           <div className="space-y-10">
             {groupByDay(list).map(([day, items]) => (
               <section key={day}>
-                <h2 className="mb-3 font-display text-lg font-semibold capitalize text-ink-300">
+                <h2 className="mb-3 font-display text-lg font-semibold text-ink-300 first-letter:uppercase">
                   {day === 'none' ? 'Sin fecha' : formatDay(items[0].scheduled_at!)}
                 </h2>
-                <div className="grid gap-3">
+                <div className="grid gap-3 lg:grid-cols-2">
                   {items.map((match) => (
                     <MatchCard
                       key={match.id}

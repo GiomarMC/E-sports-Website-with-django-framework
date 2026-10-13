@@ -1,4 +1,4 @@
-import { ArrowRight, ArrowSquareOut, Broadcast, Clock, Crown, Trophy } from '@phosphor-icons/react'
+import { ArrowRight, ArrowSquareOut, Broadcast, Trophy } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
 import { useMemo } from 'react'
 import { formatDate, formatTime, matchStatusLabel, platformLabel } from '../lib/format'
@@ -7,79 +7,83 @@ import { BOX_W, GAP_X, hasScore, layoutBracket, roundLabel } from '../lib/tourna
 import type { BracketSection, GroupStandings, Match, MatchParticipant, Stream } from '../lib/types'
 import { Badge, cx, TeamLogo } from './ui'
 
-// ------------------------------------------------------------ match row
+type OnMatch = (match: Match) => void
 
-function ParticipantLine({
-  participant,
-  match,
-  compact,
-}: {
-  participant: MatchParticipant | undefined
-  match: Match
-  compact?: boolean
-}) {
+/** Both sides of a 1 vs 1 match, in slot order. In a bye the team goes first
+ * and the empty slot ("pase directo") last. */
+function sides(match: Match) {
+  return [...match.participants].sort((x, y) =>
+    match.is_bye ? Number(!x.registration) - Number(!y.registration) : x.slot - y.slot,
+  )
+}
+
+function outcome(match: Match, participant: MatchParticipant | undefined) {
+  const decided = !match.is_bye && match.status === 'completed' && match.winner !== null
+  const isWinner = decided && !!participant?.registration && participant.registration === match.winner
+  return { isWinner, isLoser: decided && !isWinner }
+}
+
+/** Score cell like Liquipedia: the games won or, when the admin only set the
+ * winner, W / L. */
+function scoreText(match: Match, participant: MatchParticipant | undefined) {
+  if (match.is_bye || match.status !== 'completed') return ''
+  if (hasScore(match)) return String(participant?.score ?? 0)
+  if (match.winner === null) return '-'
+  return participant?.registration === match.winner ? 'W' : 'L'
+}
+
+// ------------------------------------------------------- bracket match
+
+function BracketLine({ participant, match }: { participant: MatchParticipant | undefined; match: Match }) {
   // A bye is not a played match: the team simply passes to the next round,
   // so it is not shown as a winner.
   const bye = match.is_bye
   const name = participant?.registration_name ?? (bye ? 'Pase directo' : 'Por definir')
-  const decided = !bye && match.status === 'completed' && match.winner !== null
-  const isWinner = decided && participant?.registration === match.winner
-  const isLoser = decided && !isWinner
+  const { isWinner, isLoser } = outcome(match, participant)
   return (
-    <div
-      className={cx(
-        'flex items-center gap-2.5 px-3 transition-colors',
-        compact ? 'h-9' : 'h-11',
-        isWinner && 'bg-win-soft',
-      )}
-    >
-      {participant?.registration ? (
-        <TeamLogo src={participant.logo} name={name} size={compact ? 20 : 24} />
-      ) : bye ? (
-        <ArrowRight size={compact ? 14 : 16} className="mx-[3px] shrink-0 text-ink-400" />
-      ) : (
-        <span className={cx('shrink-0 rounded-md border border-dashed border-white/10', compact ? 'size-5' : 'size-6')} />
-      )}
+    <div className="flex h-8 items-stretch">
+      <div className={cx('flex min-w-0 flex-1 items-center gap-2 px-2.5', isWinner && 'bg-win-soft')}>
+        {participant?.registration ? (
+          <TeamLogo src={participant.logo} name={name} size={18} />
+        ) : bye ? (
+          <ArrowRight size={14} className="mx-[2px] shrink-0 text-ink-400" />
+        ) : (
+          <span className="size-[18px] shrink-0 rounded border border-dashed border-white/10" />
+        )}
+        <span
+          className={cx(
+            'min-w-0 flex-1 truncate text-[13px]',
+            isWinner ? 'font-semibold text-ink-100' : isLoser ? 'text-ink-400' : 'text-ink-300',
+            !participant?.registration && (bye ? 'text-[11px] uppercase tracking-wide text-ink-400' : 'italic text-ink-600'),
+          )}
+        >
+          {name}
+        </span>
+      </div>
       <span
         className={cx(
-          'min-w-0 flex-1 truncate text-sm',
-          isWinner ? 'font-semibold text-ink-100' : isLoser ? 'text-ink-400' : 'text-ink-300',
-          !participant?.registration && (bye ? 'text-xs uppercase tracking-wide text-ink-400' : 'italic text-ink-600'),
+          'grid w-8 shrink-0 place-items-center border-l border-white/[0.06] font-mono text-[13px] tabular-nums',
+          isWinner ? 'bg-win/20 font-bold text-win' : 'bg-ink-800 text-ink-400',
         )}
       >
-        {name}
-      </span>
-      {isWinner && <Crown size={14} weight="fill" className="shrink-0 text-win" />}
-      <span
-        className={cx(
-          'w-6 text-right font-mono text-sm tabular-nums',
-          isWinner ? 'font-semibold text-win' : 'text-ink-400',
-        )}
-      >
-        {hasScore(match) ? participant?.score : ''}
+        {scoreText(match, participant)}
       </span>
     </div>
   )
 }
 
-type OnMatch = (match: Match) => void
-
+/** Match of a bracket: two stacked lines with the score on the right. */
 export function MatchBox({
   match,
-  compact,
   className,
   onClick,
 }: {
   match: Match
-  compact?: boolean
   className?: string
   /** Admin: makes the match clickable (e.g. to define the winner). */
   onClick?: OnMatch
 }) {
-  const [a, b] = [...match.participants].sort((x, y) =>
-    // In a bye the team goes first and the empty slot ("pase directo") last.
-    match.is_bye ? Number(!x.registration) - Number(!y.registration) : x.slot - y.slot,
-  )
+  const [a, b] = sides(match)
   const clickable = !!onClick && !match.is_bye
   const Tag = clickable ? 'button' : 'div'
   return (
@@ -88,42 +92,134 @@ export function MatchBox({
       onClick={clickable ? () => onClick(match) : undefined}
       title={clickable ? 'Definir o corregir el resultado' : undefined}
       className={cx(
-        'block w-full overflow-hidden rounded-xl border bg-ink-850 text-left divide-y divide-white/[0.05]',
-        match.status === 'live' ? 'border-live/50' : match.is_bye ? 'border-dashed border-white/10' : 'border-white/[0.07]',
+        'block w-full overflow-hidden rounded-md border bg-ink-850 text-left divide-y divide-white/[0.06]',
+        match.status === 'live'
+          ? 'border-live/60 shadow-[inset_2px_0_0_var(--color-live)]'
+          : match.is_bye
+            ? 'border-dashed border-white/10'
+            : 'border-white/[0.09]',
         clickable && 'transition hover:border-accent/60 hover:bg-ink-800',
         className,
       )}
     >
-      <ParticipantLine participant={a} match={match} compact={compact} />
-      <ParticipantLine participant={b} match={match} compact={compact} />
+      <BracketLine participant={a} match={match} />
+      <BracketLine participant={b} match={match} />
     </Tag>
   )
 }
 
-/** Wide match card for schedules: time, stage, teams, score and stream. */
+// ---------------------------------------------------------- match strip
+
+function StripSide({
+  participant,
+  match,
+  align,
+  large,
+}: {
+  participant: MatchParticipant | undefined
+  match: Match
+  align: 'left' | 'right'
+  large?: boolean
+}) {
+  const name = participant?.registration_name ?? 'Por definir'
+  const { isWinner, isLoser } = outcome(match, participant)
+  return (
+    <div className={cx('flex min-w-0 items-center gap-2.5', align === 'left' && 'flex-row-reverse text-right')}>
+      {participant?.registration ? (
+        <TeamLogo src={participant.logo} name={name} size={large ? 32 : 22} />
+      ) : (
+        <span className={cx('shrink-0 rounded-md border border-dashed border-white/10', large ? 'size-8' : 'size-[22px]')} />
+      )}
+      <span
+        className={cx(
+          'min-w-0 truncate',
+          large ? 'font-display text-base sm:text-lg' : 'text-sm',
+          isWinner ? 'font-semibold text-ink-100' : isLoser ? 'text-ink-400' : 'text-ink-100',
+          !participant?.registration && 'italic text-ink-600',
+        )}
+      >
+        {name}
+      </span>
+    </div>
+  )
+}
+
+/** Center of a strip: the result, "vivo", or the time of the match. */
+function StripCenter({ match, large }: { match: Match; large?: boolean }) {
+  const [a, b] = sides(match)
+  if (match.status === 'completed') {
+    const digit = (p: MatchParticipant | undefined) => (
+      <span className={cx('w-[1.4ch] text-center', outcome(match, p).isWinner ? 'text-win' : 'text-ink-300')}>
+        {scoreText(match, p)}
+      </span>
+    )
+    return (
+      <span
+        className={cx(
+          'inline-flex items-center justify-center gap-1 rounded-md bg-ink-800 font-mono font-semibold tabular-nums',
+          large ? 'px-3 py-1.5 text-xl' : 'px-2 py-1 text-sm',
+        )}
+      >
+        {digit(a)}
+        <span className="text-ink-600">:</span>
+        {digit(b)}
+      </span>
+    )
+  }
+  if (match.status === 'live') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-md bg-live/15 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-live">
+        <span className="size-1.5 animate-[live-pulse_1.6s_ease-in-out_infinite] rounded-full bg-live" />
+        Vivo
+      </span>
+    )
+  }
+  if (match.status === 'canceled') return <span className="text-xs text-ink-400">Cancelado</span>
+  return (
+    <span className="flex flex-col items-center leading-tight">
+      <span className={cx('font-mono font-semibold tabular-nums text-ink-300', large ? 'text-lg' : 'text-xs')}>
+        {match.scheduled_at ? formatTime(match.scheduled_at) : 'vs'}
+      </span>
+      {match.scheduled_at && !large && (
+        <span className="text-[10px] text-ink-400">{formatDate(match.scheduled_at).replace(/ \d{4}$/, '')}</span>
+      )}
+    </span>
+  )
+}
+
+/** Symmetric match row (Liquipedia match list): team, result, team. */
+export function MatchStrip({ match, onClick, large }: { match: Match; onClick?: OnMatch; large?: boolean }) {
+  const [a, b] = sides(match)
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick ? () => onClick(match) : undefined}
+      title={onClick ? 'Definir o corregir el resultado' : undefined}
+      className={cx(
+        'grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 text-left',
+        large ? 'px-4 py-4 sm:px-6' : 'px-3 py-2',
+        onClick && 'transition hover:bg-white/[0.03]',
+      )}
+    >
+      <StripSide participant={a} match={match} align="left" large={large} />
+      <div className={cx('flex justify-center', large ? 'min-w-24' : 'min-w-16')}>
+        <StripCenter match={match} large={large} />
+      </div>
+      <StripSide participant={b} match={match} align="right" large={large} />
+    </Tag>
+  )
+}
+
+/** Wide match card for schedules (Liquipedia upcoming match box). */
 export function MatchCard({ match, gameName }: { match: Match; gameName?: string }) {
   const stream = match.streams.find((s) => s.is_live) ?? match.streams[0]
   const ffa = match.participants.length > 2
+  const round = match.group_name || ffa ? `Fecha ${match.round}` : roundLabel(match.label, match.round)
   return (
-    <div
-      className={cx(
-        'surface grid gap-4 p-4 sm:grid-cols-[96px_1fr_auto] sm:items-center',
-        match.status === 'live' && 'border-live/40',
-      )}
-    >
-      <div className="flex items-center gap-3 sm:flex-col sm:items-start sm:gap-1">
-        <span className="font-mono text-lg font-semibold tabular-nums text-ink-100">{formatTime(match.scheduled_at)}</span>
-        <span className="text-xs text-ink-400">{match.scheduled_at ? formatDate(match.scheduled_at) : 'Sin fecha'}</span>
-      </div>
-      <div className="min-w-0">
-        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-ink-400">
-          {gameName && <span className="font-semibold text-ink-300">{gameName}</span>}
-          <span>{match.stage_name}</span>
-          {match.group_name && <span>· {match.group_name}</span>}
-          <span>· {match.group_name || match.participants.length > 2 ? `Fecha ${match.round}` : roundLabel(match.label, match.round)}</span>
-          <span>· Bo{match.best_of}</span>
-        </div>
-        {ffa ? (
+    <div className={cx('surface overflow-hidden', match.status === 'live' && 'border-live/40')}>
+      {ffa ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
           <p className="text-sm text-ink-300">
             {match.participants.length} participantes
             {match.status === 'completed' && match.winner && (
@@ -136,22 +232,31 @@ export function MatchCard({ match, gameName }: { match: Match; gameName?: string
               </>
             )}
           </p>
-        ) : (
-          <MatchBox match={match} compact className="max-w-md" />
-        )}
-      </div>
-      <div className="flex items-center gap-2 sm:flex-col sm:items-end">
-        <StatusBadge status={match.status} />
-        {stream && (
-          <a
-            href={stream.url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-300 transition hover:text-accent"
-          >
-            <Broadcast size={14} /> {platformLabel[stream.platform]}
-          </a>
-        )}
+          <span className="font-mono text-lg font-semibold tabular-nums text-ink-300">{formatTime(match.scheduled_at)}</span>
+        </div>
+      ) : (
+        <MatchStrip match={match} large />
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-white/[0.06] bg-ink-850/70 px-4 py-2.5 text-xs text-ink-400 sm:px-6">
+        {gameName && <span className="font-semibold text-ink-300">{gameName}</span>}
+        <span>{match.stage_name}</span>
+        {match.group_name && <span>{match.group_name}</span>}
+        <span>{round}</span>
+        <span className="rounded bg-ink-800 px-1.5 py-0.5 font-mono text-[11px] text-ink-300">Bo{match.best_of}</span>
+        <span className="ml-auto flex items-center gap-3">
+          {match.scheduled_at && <span>{formatDate(match.scheduled_at, true)}</span>}
+          {stream && (
+            <a
+              href={stream.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 font-medium text-ink-300 transition hover:text-accent"
+            >
+              <Broadcast size={14} /> {platformLabel[stream.platform]}
+            </a>
+          )}
+          <StatusBadge status={match.status} />
+        </span>
       </div>
     </div>
   )
@@ -164,7 +269,7 @@ export function StatusBadge({ status }: { status: Match['status'] }) {
 
 // -------------------------------------------------------------- bracket
 
-const HEADER = 36
+const HEADER = 44
 
 export function Bracket({ section, onMatchClick }: { section: BracketSection; onMatchClick?: OnMatch }) {
   const { items, lines, width, height } = useMemo(() => layoutBracket(section.rounds), [section.rounds])
@@ -174,10 +279,15 @@ export function Bracket({ section, onMatchClick }: { section: BracketSection; on
         {section.rounds.map((round, column) => (
           <div
             key={round.round}
-            className="absolute top-0 flex h-7 items-center justify-center rounded-lg bg-ink-800 text-xs font-semibold uppercase tracking-wide text-ink-300"
+            className="absolute top-0 flex h-8 items-center justify-between gap-2 rounded-md border border-white/[0.06] bg-ink-800 px-3"
             style={{ left: column * (BOX_W + GAP_X), width: BOX_W }}
           >
-            {roundLabel(round.matches[0]?.label ?? '', round.round)}
+            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-100">
+              {roundLabel(round.matches[0]?.label ?? '', round.round)}
+            </span>
+            {round.matches[0] && (
+              <span className="shrink-0 font-mono text-[11px] text-ink-400">Bo{round.matches[0].best_of}</span>
+            )}
           </div>
         ))}
         <svg className="absolute left-0" style={{ top: HEADER }} width={width} height={height} aria-hidden>
@@ -187,7 +297,7 @@ export function Bracket({ section, onMatchClick }: { section: BracketSection; on
               d={line.d}
               fill="none"
               strokeWidth={1.5}
-              className={line.done ? 'stroke-win/60' : 'stroke-white/15'}
+              className={line.done ? 'stroke-win/50' : 'stroke-white/20'}
               initial={{ pathLength: 0 }}
               animate={{ pathLength: 1 }}
               transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
@@ -203,15 +313,18 @@ export function Bracket({ section, onMatchClick }: { section: BracketSection; on
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: Math.min(index * 0.03, 0.5), type: 'spring', stiffness: 200, damping: 24 }}
           >
-            <MatchBox match={item.match} compact onClick={onMatchClick} />
-            {item.match.label === 'Third place' && (
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">Tercer lugar</p>
-            )}
-            {item.match.scheduled_at && item.match.status !== 'completed' && (
-              <p className="mt-1 flex items-center gap-1 text-[11px] text-ink-400">
-                <Clock size={11} /> {formatDate(item.match.scheduled_at, true)}
-              </p>
-            )}
+            <MatchBox match={item.match} onClick={onMatchClick} />
+            <p className="mt-1 flex h-4 items-center gap-2 truncate text-[11px] text-ink-400" style={{ maxWidth: BOX_W }}>
+              {item.match.label === 'Third place' && (
+                <span className="font-semibold uppercase tracking-wide text-ink-300">Tercer lugar</span>
+              )}
+              {item.match.status === 'live' ? (
+                <span className="font-semibold uppercase tracking-wide text-live">En vivo</span>
+              ) : (
+                item.match.scheduled_at &&
+                item.match.status !== 'completed' && <span>{formatDate(item.match.scheduled_at, true)}</span>
+              )}
+            </p>
           </motion.div>
         ))}
       </div>
@@ -233,14 +346,18 @@ export function BracketSections({ sections, onMatchClick }: { sections: BracketS
       {sections.map((section) => (
         <div key={`${section.group ?? ''}-${section.bracket ?? ''}`}>
           {section.bracket && (
-            <p
-              className={cx(
-                'mb-3 text-xs font-semibold uppercase tracking-[0.18em]',
-                section.bracket === 'lower' ? 'text-ink-400' : 'text-accent',
-              )}
-            >
-              {SECTION_TITLES[section.bracket]}
-            </p>
+            <div className="mb-3 flex items-center gap-3">
+              <span
+                className={cx(
+                  'h-4 w-1 rounded-full',
+                  section.bracket === 'upper' ? 'bg-win' : section.bracket === 'lower' ? 'bg-warn' : 'bg-accent',
+                )}
+              />
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-100">
+                {SECTION_TITLES[section.bracket]}
+              </p>
+              <span className="h-px flex-1 bg-white/[0.06]" />
+            </div>
           )}
           <Bracket section={section} onMatchClick={onMatchClick} />
         </div>
@@ -251,89 +368,139 @@ export function BracketSections({ sections, onMatchClick }: { sections: BracketS
 
 // --------------------------------------------------------------- groups
 
+const sign = (value: number) => (value > 0 ? `+${value}` : String(value))
+
+/** Group standings like Liquipedia: matches and games won, colored by the
+ * places that qualify (upper) or go to the lower bracket. */
 export function GroupTable({
   group,
   advance,
+  lowerAdvance = 0,
   freeForAll,
 }: {
   group: GroupStandings
   advance: number
+  /** Next places that start in the lower bracket. */
+  lowerAdvance?: number
   freeForAll?: boolean
 }) {
+  // Highlight the qualifying places only once the group has started: with
+  // everyone at 0 points the order means nothing yet.
+  const started = group.standings.some((r) => r.played > 0)
+  const draws = group.standings.some((r) => r.draws > 0)
+  const place = (rank: number) =>
+    !started ? null : rank <= advance ? 'up' : rank <= advance + lowerAdvance ? 'lower' : 'out'
   return (
     <div className="surface overflow-hidden">
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+      <div className="flex items-center justify-between border-b border-white/[0.06] bg-ink-850/70 px-4 py-2.5">
         <h4 className="font-display font-semibold">{group.group ?? 'Clasificación'}</h4>
-        {advance > 0 && <span className="text-xs text-ink-400">Clasifican {advance}</span>}
+        {advance > 0 && (
+          <span className="text-xs text-ink-400">
+            Clasifican {advance}
+            {lowerAdvance > 0 && ` · ${lowerAdvance} al lower`}
+          </span>
+        )}
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-left text-[11px] uppercase tracking-wide text-ink-400">
-            <th className="w-10 py-2 pl-4 font-medium">#</th>
-            <th className="py-2 font-medium">Equipo</th>
-            <th className="w-12 py-2 text-center font-medium" title="Jugados">
+          <tr className="border-b border-white/[0.05] text-left text-[10px] uppercase tracking-[0.12em] text-ink-400">
+            <th className="w-11 py-2 pl-4 font-semibold">#</th>
+            <th className="py-2 font-semibold">{freeForAll ? 'Participante' : 'Equipo'}</th>
+            <th className="w-12 py-2 text-center font-semibold" title="Jugados">
               PJ
             </th>
             {freeForAll ? (
-              <th className="w-12 py-2 text-center font-medium" title="Victorias">
+              <th className="w-12 py-2 text-center font-semibold" title="Primeros puestos">
                 1ros
               </th>
             ) : (
               <>
-                <th className="hidden w-16 py-2 text-center font-medium sm:table-cell" title="Ganados-Empatados-Perdidos">
-                  G-E-P
+                <th className="w-16 py-2 text-center font-semibold" title={draws ? 'Ganados-Empatados-Perdidos' : 'Ganados-Perdidos'}>
+                  {draws ? 'G-E-P' : 'G-P'}
                 </th>
-                <th className="hidden w-12 py-2 text-center font-medium sm:table-cell" title="Diferencia">
+                <th className="hidden w-16 py-2 text-center font-semibold sm:table-cell" title="Partidas ganadas-perdidas">
+                  Juegos
+                </th>
+                <th className="hidden w-12 py-2 text-center font-semibold sm:table-cell" title="Diferencia de partidas">
                   Dif
                 </th>
               </>
             )}
-            <th className="w-14 py-2 pr-4 text-right font-medium">Pts</th>
+            <th className="w-14 py-2 pr-4 text-right font-semibold">Pts</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-white/[0.04]">
           {group.standings.map((row) => {
-            // Highlight the qualifying places only once the group has started:
-            // with everyone at 0 points the order means nothing yet.
-            const started = group.standings.some((r) => r.played > 0)
-            const qualifies = started && row.rank <= advance
+            const status = place(row.rank)
             return (
-              <tr key={row.registration.id} className={cx(qualifies && 'bg-win-soft/60')}>
-                <td className="py-2.5 pl-4">
+              <tr
+                key={row.registration.id}
+                className={cx(status === 'up' && 'bg-win-soft/50', status === 'lower' && 'bg-warn-soft/50')}
+              >
+                <td
+                  className={cx(
+                    'py-2 pl-4',
+                    status === 'up' && 'shadow-[inset_3px_0_0_var(--color-win)]',
+                    status === 'lower' && 'shadow-[inset_3px_0_0_var(--color-warn)]',
+                  )}
+                >
                   <span
                     className={cx(
-                      'grid size-6 place-items-center rounded-md font-mono text-xs',
-                      qualifies ? 'bg-win/20 text-win' : 'text-ink-400',
+                      'font-mono text-xs tabular-nums',
+                      status === 'up' ? 'text-win' : status === 'lower' ? 'text-warn' : 'text-ink-400',
                     )}
                   >
-                    {row.rank}
+                    {row.rank}.
                   </span>
                 </td>
-                <td className="py-2.5">
+                <td className="py-2">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <TeamLogo src={row.registration.logo} name={row.registration.display_name} size={22} />
-                    <span className="truncate font-medium">{row.registration.display_name}</span>
+                    <span className={cx('truncate font-medium', status === 'out' && 'text-ink-300')}>
+                      {row.registration.display_name}
+                    </span>
                   </div>
                 </td>
-                <td className="py-2.5 text-center font-mono tabular-nums text-ink-300">{row.played}</td>
+                <td className="py-2 text-center font-mono tabular-nums text-ink-400">{row.played}</td>
                 {freeForAll ? (
-                  <td className="py-2.5 text-center font-mono tabular-nums text-ink-300">{row.wins}</td>
+                  <td className="py-2 text-center font-mono tabular-nums text-ink-300">{row.wins}</td>
                 ) : (
                   <>
-                    <td className="hidden py-2.5 text-center font-mono tabular-nums text-ink-300 sm:table-cell">
-                      {row.wins}-{row.draws}-{row.losses}
+                    <td className="py-2 text-center font-mono tabular-nums text-ink-100">
+                      {row.wins}-{draws ? `${row.draws}-` : ''}
+                      {row.losses}
                     </td>
-                    <td className="hidden py-2.5 text-center font-mono tabular-nums text-ink-300 sm:table-cell">
-                      {row.score_diff > 0 ? `+${row.score_diff}` : row.score_diff}
+                    <td className="hidden py-2 text-center font-mono tabular-nums text-ink-300 sm:table-cell">
+                      {row.score_for}-{row.score_against}
+                    </td>
+                    <td
+                      className={cx(
+                        'hidden py-2 text-center font-mono tabular-nums sm:table-cell',
+                        row.score_diff > 0 ? 'text-win' : row.score_diff < 0 ? 'text-accent' : 'text-ink-400',
+                      )}
+                    >
+                      {sign(row.score_diff)}
                     </td>
                   </>
                 )}
-                <td className="py-2.5 pr-4 text-right font-mono font-semibold tabular-nums">{row.points}</td>
+                <td className="py-2 pr-4 text-right font-mono font-semibold tabular-nums">{row.points}</td>
               </tr>
             )
           })}
         </tbody>
       </table>
+      {started && advance > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-white/[0.05] px-4 py-2 text-[11px] text-ink-400">
+          <span className="flex items-center gap-1.5">
+            <span className="size-2 rounded-sm bg-win" /> Clasifica{lowerAdvance > 0 && ' al upper'}
+          </span>
+          {lowerAdvance > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="size-2 rounded-sm bg-warn" /> Pasa al lower
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -345,17 +512,29 @@ export function GroupMatches({ matches, onMatchClick }: { matches: Match[]; onMa
     for (const match of matches) map.set(match.round, [...(map.get(match.round) ?? []), match])
     return [...map.entries()].sort(([a], [b]) => a - b)
   }, [matches])
+  const played = matches.filter((m) => m.status === 'completed').length
   return (
-    <div className="space-y-3">
+    <div className="surface overflow-hidden">
+      <div className="flex items-center justify-between border-b border-white/[0.06] bg-ink-850/70 px-4 py-2.5">
+        <h4 className="font-display font-semibold">Matchs</h4>
+        <span className="font-mono text-xs tabular-nums text-ink-400">
+          {played}/{matches.length} jugados
+          {matches[0] && ` · Bo${matches[0].best_of}`}
+        </span>
+      </div>
       {rounds.map(([round, items]) => (
         <div key={round}>
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-400">Fecha {round}</p>
-          <div className="grid gap-2">
+          <p className="border-b border-white/[0.04] bg-ink-950/40 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-ink-400">
+            Fecha {round}
+          </p>
+          <div className="divide-y divide-white/[0.04]">
             {items.map((match) =>
               match.participants.length > 2 ? (
-                <FreeForAllResult key={match.id} match={match} onClick={onMatchClick} />
+                <div key={match.id} className="p-2">
+                  <FreeForAllResult match={match} onClick={onMatchClick} />
+                </div>
               ) : (
-                <MatchBox key={match.id} match={match} compact onClick={onMatchClick} />
+                <MatchStrip key={match.id} match={match} onClick={onMatchClick} />
               ),
             )}
           </div>
