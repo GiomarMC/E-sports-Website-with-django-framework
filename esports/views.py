@@ -63,7 +63,7 @@ class ActionPermissionMixin:
 
 def check_game_permission(user, game):
     if not user.can_manage_game(game):
-        raise PermissionDenied('You are not an administrator of this game.')
+        raise PermissionDenied('No eres administrador de este juego.')
 
 
 def run_service(function, *args, **kwargs):
@@ -132,14 +132,14 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
 
         if not user.check_password(old_password):
             return Response({
-                "error": "Old password is incorrect."
+                "error": "La contraseña actual es incorrecta."
             }, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(new_password)
         user.save()
 
         return Response({
-            "message": "Password updated successfully."
+            "message": "Contraseña actualizada."
         }, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(request_body=ResetPasswordSerializer)
@@ -153,7 +153,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         user.save()
 
         return Response({
-            "message": "Password reset successfully."
+            "message": "Contraseña restablecida."
         }, status=status.HTTP_200_OK)
 
     def list(self, request):
@@ -171,7 +171,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
 
         user = serializer.save()
         return Response({
-            "message": "Admin created successfully.",
+            "message": "Administrador creado.",
             "admin": AdminListSerializer(user).data
         }, status=status.HTTP_201_CREATED)
 
@@ -184,7 +184,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         if user.id == request.user.id and \
                 serializer.validated_data.get('role', user.role) != user.role:
-            raise PermissionDenied('You cannot change your own role.')
+            raise PermissionDenied('No puedes cambiar tu propio rol.')
         serializer.save()
         return Response(AdminListSerializer(user).data)
 
@@ -193,7 +193,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
 
         if user.id == request.user.id:
             return Response({
-                "error": "You cannot delete your own account."
+                "error": "No puedes eliminar tu propia cuenta."
             }, status=status.HTTP_403_FORBIDDEN)
 
         user.delete()
@@ -206,7 +206,8 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         user = self.get_admin(pk)
         if user.role != 'admin':
             return Response({
-                "error": "Superadmins already manage every game."
+                "error":
+                    "Los superadministradores ya gestionan todos los juegos."
             }, status=status.HTTP_400_BAD_REQUEST)
         serializer = AssignGamesSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -292,7 +293,7 @@ class GameViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         game = self.get_object()
         game.active = True
         game.save(update_fields=['active'])
-        return Response({"message": "Game activated successfully."},
+        return Response({"message": "Juego activado."},
                         status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
@@ -300,7 +301,7 @@ class GameViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         game = self.get_object()
         game.active = False
         game.save(update_fields=['active'])
-        return Response({"message": "Game deactivated successfully."},
+        return Response({"message": "Juego desactivado."},
                         status=status.HTTP_200_OK)
 
 
@@ -361,10 +362,10 @@ class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
                 'players', game.min_players
             ))
         except ValueError:
-            raise ValidationError({'players': 'Must be a number.'})
+            raise ValidationError({'players': 'Debe ser un número.'})
         if not game.min_players <= players <= game.max_players:
             raise ValidationError({'players': (
-                f"Must be between {game.min_players} and "
+                f"Debe estar entre {game.min_players} y "
                 f"{game.max_players}."
             )})
         return Response({
@@ -390,8 +391,8 @@ class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         registration = serializer.save()
         return Response({
-            'message': 'Registration received. It will be reviewed by the '
-                       'administrators.',
+            'message': 'Inscripción recibida. Los administradores la '
+                       'revisarán.',
             'code': registration.code,
             'amount_due': str(registration.amount_due),
             'status': registration.status,
@@ -495,7 +496,7 @@ class RegistrationViewSet(ActionPermissionMixin,
         try:
             code = uuid.UUID(code)
         except ValueError:
-            raise ValidationError({'code': 'Invalid code.'})
+            raise ValidationError({'code': 'Código inválido.'})
         registration = get_object_or_404(
             Registration.objects.select_related('tournament'), code=code
         )
@@ -583,14 +584,34 @@ class StageViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         stage = self.get_object()
         serializer = DrawSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        stage = run_service(
-            services.draw_stage, stage,
-            serializer.validated_data.get('registration_ids') or None,
-            serializer.validated_data['shuffle'],
-        )
+        preview = serializer.validated_data['preview']
+        with transaction.atomic():
+            stage = run_service(
+                services.draw_stage, stage,
+                serializer.validated_data.get('registration_ids') or None,
+                serializer.validated_data['shuffle'],
+                serializer.validated_data.get('lower_registration_ids'),
+            )
+            data = StageDetailSerializer(
+                stage, context={'request': request}
+            ).data
+            entries = stage.participants.order_by('seed')
+            data['seeding'] = list(entries.filter(
+                starts_in_lower=False).values_list(
+                    'registration_id', flat=True))
+            data['lower_seeding'] = list(entries.filter(
+                starts_in_lower=True).values_list(
+                    'registration_id', flat=True))
+            data['bracket'] = bracket_sections(
+                match_queryset().filter(stage=stage), request
+            )
+            data['preview'] = preview
+            if preview:
+                # Nothing is saved: the admin only wants to see the result.
+                transaction.set_rollback(True)
         return Response(
-            StageDetailSerializer(stage, context={'request': request}).data,
-            status=status.HTTP_201_CREATED
+            data,
+            status=status.HTTP_200_OK if preview else status.HTTP_201_CREATED
         )
 
     @action(detail=True, methods=['post'])
@@ -625,26 +646,39 @@ class StageViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
     def bracket(self, request, pk=None):
         """Matches of the stage grouped by group and round."""
         stage = self.get_object()
-        matches = match_queryset().filter(stage=stage)
-        sections = defaultdict(lambda: defaultdict(list))
-        data = MatchSerializer(
-            matches, many=True, context={'request': request}
-        ).data
-        for match in data:
-            sections[match['group_name']][match['round']].append(match)
-        return Response([
-            {
-                'group': group,
-                'rounds': [
-                    {'round': number, 'matches': items}
-                    for number, items in sorted(rounds.items())
-                ],
-            }
-            for group, rounds in sections.items()
-        ])
+        return Response(bracket_sections(
+            match_queryset().filter(stage=stage), request
+        ))
 
 
 # -------------------------------------------------------------- matches
+
+BRACKET_ORDER = {'upper': 0, 'lower': 1, 'final': 2, '': 3}
+
+
+def bracket_sections(matches, request):
+    """Matches grouped by group (or by upper / lower bracket / grand final
+    in a double elimination) and round."""
+    sections = defaultdict(lambda: defaultdict(list))
+    data = MatchSerializer(matches, many=True, context={'request': request})
+    for match in data.data:
+        key = (match['group_name'], match['bracket'])
+        sections[key][match['round']].append(match)
+    ordered = sorted(
+        sections.items(), key=lambda item: BRACKET_ORDER[item[0][1]]
+    )
+    return [
+        {
+            'group': group,
+            'bracket': bracket or None,
+            'rounds': [
+                {'round': number, 'matches': items}
+                for number, items in sorted(rounds.items())
+            ],
+        }
+        for (group, bracket), rounds in ordered
+    ]
+
 
 def match_queryset():
     return Match.objects.select_related(
@@ -676,7 +710,7 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         if params.get('date'):
             day = parse_date(params['date'])
             if day is None:
-                raise ValidationError({'date': 'Use YYYY-MM-DD.'})
+                raise ValidationError({'date': 'Usa el formato AAAA-MM-DD.'})
             matches = matches.filter(scheduled_at__date=day)
         for param, lookup in [('from', 'scheduled_at__gte'),
                               ('to', 'scheduled_at__lte')]:
@@ -684,7 +718,7 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
                 value = parse_datetime(params[param])
                 if value is None:
                     raise ValidationError(
-                        {param: 'Use an ISO 8601 date time.'}
+                        {param: 'Usa una fecha y hora ISO 8601.'}
                     )
                 matches = matches.filter(**{lookup: value})
         if query_flag(self.request, 'upcoming'):
@@ -706,7 +740,7 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if instance.status == 'completed' and not instance.is_bye:
             raise ValidationError(
-                {'detail': 'Reset the result before deleting the match.'}
+                {'detail': 'Reinicia el resultado antes de eliminar el match.'}
             )
         instance.delete()
 
@@ -730,6 +764,7 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
             {s['registration']: s['score'] for s in scores} or None,
             winner_id=serializer.validated_data.get('winner'),
             placements=placements or None,
+            draw=serializer.validated_data['draw'],
         )
         return Response(self.get_serializer(self.get_object()).data)
 
@@ -777,7 +812,7 @@ class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         if game is not None and match is not None and \
                 game_of(match) != game:
             raise ValidationError(
-                {'match': 'The match does not belong to the game.'}
+                {'match': 'El match no pertenece al juego.'}
             )
         check_game_permission(self.request.user, game)
 

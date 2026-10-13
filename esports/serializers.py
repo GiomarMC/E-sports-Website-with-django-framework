@@ -18,7 +18,7 @@ def validate_file_size(value):
     limit = settings.MAX_UPLOAD_SIZE_MB
     if value and value.size > limit * 1024 * 1024:
         raise serializers.ValidationError(
-            f"The file cannot be bigger than {limit} MB."
+            f"El archivo no puede pesar más de {limit} MB."
             )
     return value
 
@@ -35,17 +35,17 @@ class AdminLoginSerializer(serializers.Serializer):
 
         if not username or not password:
             raise serializers.ValidationError(
-                "Username and password are required."
+                "Usuario y contraseña son obligatorios."
                 )
 
         user = authenticate(username=username, password=password)
 
         if not user:
-            raise AuthenticationFailed("Invalid credentials")
+            raise AuthenticationFailed("Usuario o contraseña incorrectos.")
 
         if user.role not in ['admin', 'superadmin']:
             raise PermissionDenied(
-                "You do not have permission to access this resource."
+                "No tienes permiso para acceder a este recurso."
                 )
 
         data['user'] = user
@@ -105,7 +105,7 @@ class AdminCreateSerializer(serializers.ModelSerializer):
 
     def validate_role(self, value):
         if value not in ['admin', 'superadmin']:
-            raise serializers.ValidationError("Invalid role.")
+            raise serializers.ValidationError("Rol inválido.")
         return value
 
     def validate_password(self, value):
@@ -136,7 +136,7 @@ class AdminUpdateSerializer(serializers.ModelSerializer):
 
     def validate_role(self, value):
         if value not in ['admin', 'superadmin']:
-            raise serializers.ValidationError("Invalid role.")
+            raise serializers.ValidationError("Rol inválido.")
         return value
 
 
@@ -170,7 +170,8 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
                                         None))
         if start and end and start >= end:
             raise serializers.ValidationError(
-                {'registration_end': 'End date must be after start date.'}
+                {'registration_end':
+                    'La fecha de fin debe ser posterior al inicio.'}
                 )
         return data
 
@@ -192,14 +193,14 @@ class GameCreateUpdateSerializer(serializers.ModelSerializer):
 
     def validate_bases(self, value):
         if value and not value.name.lower().endswith('.pdf'):
-            raise serializers.ValidationError("Bases file must be a PDF.")
+            raise serializers.ValidationError("Las bases deben ser un PDF.")
         return validate_file_size(value)
 
     def validate_images(self, value):
         if value and not value.name.lower().endswith((
                 '.png', '.jpg', '.jpeg', '.webp')):
             raise serializers.ValidationError(
-                "Images must be in PNG, JPG, JPEG or WEBP format."
+                "La imagen debe ser PNG, JPG, JPEG o WEBP."
                 )
         return validate_file_size(value)
 
@@ -210,7 +211,7 @@ class GameCreateUpdateSerializer(serializers.ModelSerializer):
             forbidden &= set(self.fields)
             if forbidden:
                 raise PermissionDenied(
-                    "Game admins cannot change: "
+                    "Un admin de juego no puede cambiar: "
                     f"{', '.join(sorted(forbidden))}."
                     )
 
@@ -301,19 +302,20 @@ class TournamentSerializer(serializers.ModelSerializer):
             self.instance, 'registration_end', None))
         if start and end and start >= end:
             raise serializers.ValidationError(
-                {'registration_end': 'End date must be after start date.'}
+                {'registration_end':
+                    'La fecha de fin debe ser posterior al inicio.'}
                 )
         t_start = data.get('start_date', getattr(
             self.instance, 'start_date', None))
         t_end = data.get('end_date', getattr(self.instance, 'end_date', None))
         if t_start and t_end and t_start > t_end:
             raise serializers.ValidationError(
-                {'end_date': 'End date must be after start date.'}
+                {'end_date': 'La fecha de fin debe ser posterior al inicio.'}
                 )
         if self.instance and 'game' in data \
                 and data['game'] != self.instance.game:
             raise serializers.ValidationError(
-                {'game': 'The game of a tournament cannot be changed.'}
+                {'game': 'No se puede cambiar el juego de un torneo.'}
                 )
         return data
 
@@ -387,20 +389,20 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         count = len(members)
         if not game.min_players <= count <= game.max_players:
             errors['members'] = (
-                f"This game requires between {game.min_players} and "
-                f"{game.max_players} players."
+                f"Este juego requiere entre {game.min_players} y "
+                f"{game.max_players} jugadores."
                 )
 
         captains = [m for m in members if m.get('is_captain')]
         if game.is_team_game:
             if len(captains) != 1:
-                errors['captain'] = 'Exactly one member must be the captain.'
+                errors['captain'] = 'Debe haber exactamente un capitán.'
             team_name = data.get('team_name', '').strip()
             if not team_name:
-                errors['team_name'] = 'The team name is required.'
+                errors['team_name'] = 'El nombre del equipo es obligatorio.'
             elif tournament.active_registrations().filter(
                     team_name__iexact=team_name).exists():
-                errors['team_name'] = 'This team name is already taken.'
+                errors['team_name'] = 'Ya existe un equipo con ese nombre.'
             data['team_name'] = team_name
         else:
             data['team_name'] = ''
@@ -409,7 +411,7 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
 
         codes = [m['student_code'].strip().upper() for m in members]
         if len(set(codes)) != len(codes):
-            errors['student_code'] = 'Student codes must be unique.'
+            errors['student_code'] = 'Hay códigos de estudiante repetidos.'
         taken = RegistrationMember.objects.filter(
             registration__tournament=tournament,
             student_code__in=codes,
@@ -417,12 +419,12 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
             'student_code', flat=True)
         if taken:
             errors['student_code'] = (
-                f"Already registered in this tournament: "
+                f"Ya inscritos en este torneo: "
                 f"{', '.join(sorted(set(taken)))}."
                 )
 
         if tournament.fee_per_player > 0 and not data.get('voucher'):
-            errors['voucher'] = 'The payment voucher is required.'
+            errors['voucher'] = 'El comprobante de pago es obligatorio.'
         if errors:
             raise serializers.ValidationError(errors)
         for member, code in zip(members, codes):
@@ -506,12 +508,23 @@ class RejectSerializer(serializers.Serializer):
 
 # --------------------------------------------------------------- stages
 
-class StageSerializer(serializers.ModelSerializer):
+class StageUpdateMixin:
+    def update(self, instance, validated_data):
+        stage = super().update(instance, validated_data)
+        if {'best_of', 'final_best_of', 'lower_best_of'} & set(
+                validated_data):
+            from .services import apply_best_of
+            apply_best_of(stage)
+        return stage
+
+
+class StageSerializer(StageUpdateMixin, serializers.ModelSerializer):
     class Meta:
         model = Stage
         fields = [
             'id', 'tournament', 'name', 'order', 'stage_type', 'status',
-            'best_of', 'number_of_groups', 'advance_per_group',
+            'best_of', 'final_best_of', 'lower_best_of', 'number_of_groups',
+            'advance_per_group', 'lower_advance_per_group',
             'round_robin_legs', 'ffa_rounds', 'third_place_match',
             'points_win', 'points_draw', 'points_loss'
             ]
@@ -525,7 +538,7 @@ class StageSerializer(serializers.ModelSerializer):
         if self.instance and 'tournament' in data \
                 and data['tournament'] != self.instance.tournament:
             raise serializers.ValidationError(
-                {'tournament': 'The tournament cannot be changed.'}
+                {'tournament': 'No se puede cambiar el torneo.'}
                 )
         order = data.get('order', getattr(self.instance, 'order', 1))
         qs = Stage.objects.filter(tournament=tournament, order=order)
@@ -533,7 +546,7 @@ class StageSerializer(serializers.ModelSerializer):
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
             raise serializers.ValidationError(
-                {'order': 'There is already a stage with this order.'}
+                {'order': 'Ya existe una fase con ese orden.'}
                 )
         if self.instance and self.instance.matches.exists():
             locked = {
@@ -547,7 +560,7 @@ class StageSerializer(serializers.ModelSerializer):
             if changed:
                 raise serializers.ValidationError({
                     'detail': (
-                        'Reset the stage before changing: '
+                        'Reinicia la fase antes de cambiar: '
                         f"{', '.join(sorted(changed))}."
                     )
                 })
@@ -565,6 +578,17 @@ class DrawSerializer(serializers.Serializer):
     shuffle = serializers.BooleanField(
         default=True,
         help_text='Random draw. False keeps the order (seeding).'
+        )
+    lower_registration_ids = serializers.ListField(
+        child=serializers.IntegerField(), required=False, allow_empty=True,
+        help_text='Double elimination: teams that start in the lower bracket.'
+        )
+    preview = serializers.BooleanField(
+        default=False,
+        help_text=(
+            'Returns the result without saving it. To keep a preview send '
+            'its "seeding" as registration_ids with shuffle = false.'
+        )
         )
 
 
@@ -622,6 +646,7 @@ class MatchSerializer(serializers.ModelSerializer):
     game = serializers.IntegerField(
         source='stage.tournament.game_id', read_only=True
         )
+    can_draw = serializers.BooleanField(read_only=True)
     registration_ids = serializers.ListField(
         child=serializers.IntegerField(allow_null=True), write_only=True,
         required=False,
@@ -632,22 +657,25 @@ class MatchSerializer(serializers.ModelSerializer):
         model = Match
         fields = [
             'id', 'tournament', 'game', 'stage', 'stage_name', 'group',
-            'group_name', 'round', 'position', 'label', 'scheduled_at',
+            'group_name', 'bracket', 'round', 'position', 'label',
+            'scheduled_at',
             'best_of', 'status', 'is_bye', 'winner', 'next_match',
             'next_match_slot', 'loser_next_match', 'loser_next_match_slot',
             'notes', 'participants', 'streams', 'registration_ids',
-            'updated_at'
+            'can_draw', 'updated_at'
             ]
-        read_only_fields = ['is_bye', 'winner', 'updated_at']
+        read_only_fields = [
+            'is_bye', 'winner', 'can_draw', 'bracket', 'updated_at'
+            ]
 
     def validate_status(self, value):
         if value == 'completed':
             raise serializers.ValidationError(
-                "Use the result endpoint to complete a match."
+                "Un match se completa registrando su resultado."
                 )
         if self.instance and self.instance.status == 'completed':
             raise serializers.ValidationError(
-                "Reset the result before changing the status."
+                "Reinicia el resultado antes de cambiar el estado."
                 )
         return value
 
@@ -656,12 +684,12 @@ class MatchSerializer(serializers.ModelSerializer):
         if self.instance and 'stage' in data \
                 and data['stage'] != self.instance.stage:
             raise serializers.ValidationError(
-                {'stage': 'The stage of a match cannot be changed.'}
+                {'stage': 'No se puede cambiar la fase de un match.'}
                 )
         group = data.get('group')
         if group is not None and group.stage_id != stage.id:
             raise serializers.ValidationError(
-                {'group': 'The group does not belong to the stage.'}
+                {'group': 'El grupo no pertenece a la fase.'}
                 )
         for field in ['next_match', 'loser_next_match']:
             target = data.get(field)
@@ -672,36 +700,37 @@ class MatchSerializer(serializers.ModelSerializer):
                 self.instance, field, None)
             if bool(current) != bool(slot):
                 raise serializers.ValidationError({
-                    field: f'{field} and {field}_slot must be set together.'
+                    field: f'{field} y {field}_slot van juntos.'
                 })
             if target is not None:
                 if target.stage.tournament_id != stage.tournament_id:
                     raise serializers.ValidationError(
-                        {field: 'Must be a match of the same tournament.'}
+                        {field: 'Debe ser un match del mismo torneo.'}
                         )
                 if self.instance and target.pk == self.instance.pk:
                     raise serializers.ValidationError(
-                        {field: 'A match cannot feed itself.'}
+                        {field: 'Un match no puede avanzar a sí mismo.'}
                         )
         regs = data.get('registration_ids')
         if regs is not None:
             if self.instance and self.instance.status == 'completed':
                 raise serializers.ValidationError({
                     'registration_ids':
-                        'Reset the result before changing participants.'
+                        'Reinicia el resultado antes de cambiar a los '
+                        'participantes.'
                 })
             ids = [r for r in regs if r is not None]
             if len(set(ids)) != len(ids):
                 raise serializers.ValidationError(
-                    {'registration_ids': 'Duplicated participants.'}
+                    {'registration_ids': 'Hay participantes repetidos.'}
                     )
             valid = set(stage.tournament.registrations.filter(
                 id__in=ids, status='confirmed').values_list('id', flat=True))
             if valid != set(ids):
                 raise serializers.ValidationError({
                     'registration_ids': (
-                        'Participants must be confirmed registrations of '
-                        'the tournament.'
+                        'Los participantes deben ser inscripciones '
+                        'confirmadas del torneo.'
                     )
                 })
         return data
@@ -751,19 +780,24 @@ class ResultSerializer(serializers.Serializer):
         many=True, required=False,
         help_text='Optional for 1 vs 1 matches, required for free for all.'
         )
+    draw = serializers.BooleanField(
+        default=False,
+        help_text='Tie (only leagues with an even best of, e.g. Bo2).'
+        )
 
     def validate_scores(self, value):
         with_placement = [s for s in value if 'placement' in s]
         if with_placement and len(with_placement) != len(value):
             raise serializers.ValidationError(
-                'Send placement for all participants or for none.'
+                'Envía la posición de todos los participantes o de ninguno.'
                 )
         return value
 
     def validate(self, data):
-        if not data.get('scores') and data.get('winner') is None:
+        if not data.get('scores') and data.get('winner') is None \
+                and not data.get('draw'):
             raise serializers.ValidationError(
-                'Send the winner or the scores.'
+                'Envía el ganador o el marcador.'
                 )
         return data
 
