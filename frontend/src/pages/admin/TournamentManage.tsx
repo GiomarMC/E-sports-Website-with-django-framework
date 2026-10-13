@@ -810,113 +810,149 @@ function AdminMatchRow({ match, onResult, onEdit }: { match: Match; onResult: ()
   const ffa = match.participants.length > 2
   const dateChanged = date !== toInputDateTime(match.scheduled_at)
 
+  const [a, b] = [...match.participants].sort((x, y) => x.slot - y.slot)
+  const scored = hasScore(match)
+
+  return (
+    <div className={cx('surface overflow-hidden', match.status === 'live' && 'border-live/40')}>
+      {ffa ? (
+        <p className="px-4 pb-3 pt-4 text-center text-sm text-ink-300">
+          {match.participants.length} participantes
+          {completed && (
+            <span className="text-win">
+              {' '}
+              · Ganador: {match.participants.find((p) => p.registration === match.winner)?.registration_name}
+            </span>
+          )}
+        </p>
+      ) : (
+        // Scoreboard over the whole width: team A aligned to the right, the
+        // score (or VS) in the middle and team B aligned to the left.
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-4 pb-3 pt-4">
+          <ScoreSide participant={a} match={match} align="right" />
+          <div className="flex min-w-16 justify-center">
+            {scored ? (
+              <span className="font-mono text-xl font-semibold tabular-nums">
+                <span className={a?.registration === match.winner ? 'text-win' : 'text-ink-300'}>{a?.score}</span>
+                <span className="mx-2 text-ink-600">:</span>
+                <span className={b?.registration === match.winner ? 'text-win' : 'text-ink-300'}>{b?.score}</span>
+              </span>
+            ) : (
+              <span className="rounded-md bg-ink-800 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-ink-400">
+                {completed && !match.winner ? 'Empate' : 'vs'}
+              </span>
+            )}
+          </div>
+          <ScoreSide participant={b} match={match} align="left" />
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.05] bg-ink-950/30 px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Input
+              type="datetime-local"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="h-8 w-52 text-xs"
+              aria-label="Fecha y hora"
+            />
+            {dateChanged && (
+              <Button size="sm" loading={patch.isPending} onClick={() => patch.mutate({ scheduled_at: fromInputDateTime(date) })}>
+                Guardar
+              </Button>
+            )}
+          </div>
+          <span className="text-xs text-ink-400">
+            {match.label ? roundLabel(match.label, match.round) : `Match ${match.position}`} · Bo{match.best_of}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={match.status} />
+          {!completed && ready && (
+            <Button
+              size="sm"
+              variant={match.status === 'live' ? 'secondary' : 'ghost'}
+              icon={<Broadcast size={14} />}
+              loading={patch.isPending}
+              onClick={() => patch.mutate({ status: match.status === 'live' ? 'scheduled' : 'live' })}
+            >
+              {match.status === 'live' ? 'Quitar en vivo' : 'En vivo'}
+            </Button>
+          )}
+          {completed ? (
+            <>
+              <Button size="sm" variant="secondary" onClick={onResult}>
+                Corregir
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<ArrowCounterClockwise size={14} />}
+                loading={resetResult.isPending}
+                onClick={() => resetResult.mutate()}
+              >
+                Reiniciar
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" icon={<Trophy size={14} />} disabled={!ready} onClick={onResult} title={ready ? '' : 'Faltan participantes'}>
+              Definir ganador
+            </Button>
+          )}
+          <button
+            onClick={onEdit}
+            className="grid size-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/5 hover:text-ink-100"
+            aria-label="Editar match"
+          >
+            <PencilSimple size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** One side of the scoreboard: logo next to the center, name outside. */
+function ScoreSide({
+  participant,
+  match,
+  align,
+}: {
+  participant: Match['participants'][number] | undefined
+  match: Match
+  align: 'left' | 'right'
+}) {
+  const completed = match.status === 'completed'
+  const winner = completed && !!participant?.registration && participant.registration === match.winner
+  const loser = completed && match.winner !== null && !winner
+  const name = participant?.registration_name ?? 'Por definir'
   return (
     <div
       className={cx(
-        'surface grid gap-4 p-4 xl:grid-cols-[220px_1fr_auto] xl:items-center',
-        match.status === 'live' && 'border-live/40',
+        'flex min-w-0 max-w-full items-center gap-2.5 rounded-xl px-2.5 py-2 transition',
+        align === 'right' ? 'flex-row-reverse justify-self-end text-right' : 'justify-self-start text-left',
+        winner && 'bg-win-soft',
+        loser && 'opacity-50',
       )}
     >
-      <div className="flex items-center gap-2">
-        <Input
-          type="datetime-local"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="h-9 text-xs"
-          aria-label="Fecha y hora"
-        />
-        {dateChanged && (
-          <Button size="sm" loading={patch.isPending} onClick={() => patch.mutate({ scheduled_at: fromInputDateTime(date) })}>
-            Guardar
-          </Button>
+      {participant?.registration ? (
+        <TeamLogo src={participant.logo} name={name} size={28} />
+      ) : (
+        <span className="size-7 shrink-0 rounded-md border border-dashed border-white/10" />
+      )}
+      <span
+        className={cx(
+          'min-w-0 truncate text-sm',
+          winner ? 'font-semibold text-win' : 'font-medium text-ink-100',
+          !participant?.registration && 'font-normal italic text-ink-600',
         )}
-      </div>
-
-      <div className="min-w-0">
-        {ffa ? (
-          <p className="text-sm text-ink-300">
-            {match.participants.length} participantes
-            {completed && (
-              <span className="text-win">
-                {' '}
-                · Ganador: {match.participants.find((p) => p.registration === match.winner)?.registration_name}
-              </span>
-            )}
-          </p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            {[...match.participants]
-              .sort((a, b) => a.slot - b.slot)
-              .map((p, index) => {
-                const winner = completed && p.registration === match.winner
-                return (
-                  <div key={p.id} className="flex items-center gap-2">
-                    {index === 1 && <span className="text-xs text-ink-600">vs</span>}
-                    <span
-                      className={cx(
-                        'flex items-center gap-2 rounded-lg px-2 py-1',
-                        winner && 'bg-win-soft',
-                        completed && !winner && 'opacity-50',
-                      )}
-                    >
-                      <TeamLogo src={p.logo} name={p.registration_name ?? '?'} size={22} />
-                      <span className={cx('text-sm', winner ? 'font-semibold text-win' : !p.registration && 'italic text-ink-600')}>
-                        {p.registration_name ?? 'Por definir'}
-                      </span>
-                      {winner && <Crown size={14} weight="fill" className="text-win" />}
-                      {hasScore(match) && <span className="font-mono text-sm text-ink-300">{p.score}</span>}
-                    </span>
-                  </div>
-                )
-              })}
-          </div>
-        )}
-        <p className="mt-1 text-xs text-ink-400">
-          {match.label ? roundLabel(match.label, match.round) : `Match ${match.position}`} · Bo{match.best_of}
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge status={match.status} />
-        {!completed && ready && (
-          <Button
-            size="sm"
-            variant={match.status === 'live' ? 'secondary' : 'ghost'}
-            icon={<Broadcast size={14} />}
-            loading={patch.isPending}
-            onClick={() => patch.mutate({ status: match.status === 'live' ? 'scheduled' : 'live' })}
-          >
-            {match.status === 'live' ? 'Quitar en vivo' : 'En vivo'}
-          </Button>
-        )}
-        {completed ? (
-          <>
-            <Button size="sm" variant="secondary" onClick={onResult}>
-              Corregir
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<ArrowCounterClockwise size={14} />}
-              loading={resetResult.isPending}
-              onClick={() => resetResult.mutate()}
-            >
-              Reiniciar
-            </Button>
-          </>
-        ) : (
-          <Button size="sm" icon={<Trophy size={14} />} disabled={!ready} onClick={onResult} title={ready ? '' : 'Faltan participantes'}>
-            Definir ganador
-          </Button>
-        )}
-        <button
-          onClick={onEdit}
-          className="grid size-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/5 hover:text-ink-100"
-          aria-label="Editar match"
-        >
-          <PencilSimple size={16} />
-        </button>
-      </div>
+        title={name}
+      >
+        {name}
+      </span>
+      {winner && <Crown size={14} weight="fill" className="shrink-0 text-win" />}
     </div>
   )
 }
