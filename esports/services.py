@@ -26,8 +26,8 @@ class TournamentError(Exception):
 def group_name(index):
     letters = string.ascii_uppercase
     if index < len(letters):
-        return f"Group {letters[index]}"
-    return f"Group {index + 1}"
+        return f"Grupo {letters[index]}"
+    return f"Grupo {index + 1}"
 
 
 def elimination_round_label(round_number, total_rounds):
@@ -82,7 +82,7 @@ def round_robin_pairings(items):
 def create_match(stage, round_number, position, registrations, **extra):
     match = Match.objects.create(
         stage=stage, round=round_number, position=position,
-        best_of=stage.best_of, **extra
+        best_of=stage.best_of_for(extra.get('label', '')), **extra
     )
     MatchParticipant.objects.bulk_create([
         MatchParticipant(match=match, registration=reg, slot=slot)
@@ -97,56 +97,87 @@ def eligible_registrations(tournament):
     return tournament.registrations.filter(status='confirmed', is_active=True)
 
 
-def qualifiers(stage):
-    """Participants that advance from a finished stage, interleaved by
-    rank: 1st of every group, then 2nd of every group, ..."""
+def ranked_participants(stage, start, count):
+    """Participants of a finished stage between two places of every group,
+    interleaved by rank: 1st of every group, then 2nd of every group..."""
     if stage.stage_type not in ['round_robin', 'free_for_all']:
         raise TournamentError(
-            'Qualifiers can only be computed from round robin or free for '
-            'all stages. Send the participants explicitly.'
-        )
-    if stage.advance_per_group < 1:
-        raise TournamentError(
-            f'Stage "{stage.name}" has advance_per_group = 0.'
+            'Los clasificados solo se calculan desde fases de grupos o de '
+            'todos contra todos. Elige a los participantes manualmente.'
         )
     if stage.matches.exclude(status__in=['completed', 'canceled']).exists():
         raise TournamentError(
-            f'Stage "{stage.name}" still has matches to be played.'
+            f'La fase "{stage.name}" todavía tiene matchs por jugar.'
         )
     tables = [
         [row['registration'] for row in group['standings']]
         for group in stage_standings(stage)
     ]
     result = []
-    for rank in range(stage.advance_per_group):
+    for rank in range(start, start + count):
         for table in tables:
             if rank < len(table):
                 result.append(table[rank])
     return result
 
 
-def resolve_participants(stage, registration_ids=None):
+def qualifiers(stage):
+    """Participants that advance from a finished stage (upper bracket in a
+    double elimination)."""
+    if stage.advance_per_group < 1:
+        raise TournamentError(
+            f'La fase "{stage.name}" no tiene clasificados por grupo.'
+        )
+    return ranked_participants(stage, 0, stage.advance_per_group)
+
+
+def lower_qualifiers(stage):
+    """Following places that start in the lower bracket."""
+    return ranked_participants(
+        stage, stage.advance_per_group, stage.lower_advance_per_group
+    )
+
+
+def registrations_by_id(tournament, registration_ids):
+    regs = {
+        r.id: r for r in eligible_registrations(tournament).filter(
+            id__in=registration_ids
+        )
+    }
+    missing = [i for i in registration_ids if i not in regs]
+    if missing:
+        raise TournamentError(
+            f'Las inscripciones {missing} no están confirmadas y '
+            'habilitadas en este torneo.'
+        )
+    if len(set(registration_ids)) != len(registration_ids):
+        raise TournamentError('Hay inscripciones repetidas.')
+    return [regs[i] for i in registration_ids]
+
+
+def resolve_participants(stage, registration_ids=None,
+                         lower_registration_ids=None):
+    """Returns (participants, lower_bracket_participants). The second list is
+    only used by double elimination stages."""
     tournament = stage.tournament
+    double = stage.stage_type == 'double_elimination'
     if registration_ids:
-        regs = {
-            r.id: r for r in eligible_registrations(tournament).filter(
-                id__in=registration_ids
-            )
-        }
-        missing = [i for i in registration_ids if i not in regs]
-        if missing:
+        regs = registrations_by_id(tournament, registration_ids)
+        lower = registrations_by_id(
+            tournament, lower_registration_ids or []
+        ) if double else []
+        if set(r.id for r in regs) & set(r.id for r in lower):
             raise TournamentError(
-                f'Registrations {missing} are not confirmed and active in '
-                'this tournament.'
+                'Un equipo no puede empezar en upper y en lower a la vez.'
             )
-        if len(set(registration_ids)) != len(registration_ids):
-            raise TournamentError('Duplicated registrations.')
-        return [regs[i] for i in registration_ids]
+        return regs, lower
 
     previous = stage.previous_stage()
     if previous is not None:
-        return qualifiers(previous)
-    return list(eligible_registrations(tournament))
+        lower = lower_qualifiers(previous) \
+            if double and previous.lower_advance_per_group else []
+        return qualifiers(previous), lower
+    return list(eligible_registrations(tournament)), []
 
 
 # -------------------------------------------------------------- generators
@@ -172,10 +203,20 @@ def generate_free_for_all(stage, groups):
             create_match(stage, round_number, 1, regs, group=group)
 
 
+def is_power_of_two(number):
+    return number >= 2 and number & (number - 1) == 0
+
+
 def generate_single_elimination(stage, regs):
-    if len(regs) < 2:
-        raise TournamentError('At least 2 participants are needed.')
-    size = 2 ** math.ceil(math.log2(len(regs)))
+    # No byes: every participant plays from the first round, so the bracket
+    # only works with 2, 4, 8, 16... participants.
+    if not is_power_of_two(len(regs)):
+        raise TournamentError(
+            'La eliminación directa necesita 2, 4, 8, 16 o 32 participantes '
+            f'(sin pases directos) y hay {len(regs)}. Usa una liga de todos '
+            'contra todos con final, o ajusta los participantes.'
+        )
+    size = len(regs)
     total_rounds = int(math.log2(size))
     seeded = {seed: reg for seed, reg in enumerate(regs, start=1)}
     order = bracket_seed_order(size)
@@ -214,26 +255,131 @@ def generate_single_elimination(stage, regs):
                 'loser_next_match', 'loser_next_match_slot'
             ])
 
-    # Byes: the participant without rival advances automatically.
-    for match in matches_by_round[1]:
-        entries = list(match.participants.all())
-        present = [p for p in entries if p.registration_id]
-        if len(present) == 1:
-            match.is_bye = True
-            match.status = 'completed'
-            match.winner = present[0].registration
-            match.save(update_fields=['is_bye', 'status', 'winner'])
-            place_in_slot(
-                match.next_match, match.next_match_slot, match.winner
+
+def upper_round_label(round_number, total_rounds):
+    remaining = total_rounds - round_number
+    if remaining == 0:
+        return 'Upper Final'
+    if remaining == 1:
+        return 'Upper Semifinal'
+    if remaining == 2:
+        return 'Upper Quarterfinal'
+    return f'Upper Round {round_number}'
+
+
+def link_source(source, match, slot):
+    """Connects a feeder of a new match: a fixed registration (already in the
+    slot), the winner or the loser of a previous match."""
+    kind, value = source
+    if kind == 'win':
+        value.next_match, value.next_match_slot = match, slot
+        value.save(update_fields=['next_match', 'next_match_slot'])
+    elif kind == 'lose':
+        value.loser_next_match, value.loser_next_match_slot = match, slot
+        value.save(update_fields=['loser_next_match', 'loser_next_match_slot'])
+
+
+def generate_double_elimination(stage, upper, lower):
+    """Upper bracket (losers drop to the lower bracket), lower bracket
+    (losers are eliminated) and a grand final between both winners, as in
+    current Dota 2 tournaments (single grand final series, no reset).
+
+    ``lower`` are the teams that start in the lower bracket (e.g. 3rd and
+    4th of every group). It can be empty (everyone starts in upper), half or
+    the same amount as the upper bracket."""
+    size, entrants = len(upper), len(lower)
+    if not is_power_of_two(size):
+        raise TournamentError(
+            'El upper bracket necesita 2, 4, 8, 16 o 32 equipos (sin pases '
+            f'directos) y hay {size}.'
+        )
+    if entrants not in (0, size // 2, size) or (entrants == 0 and size < 4):
+        raise TournamentError(
+            f'Con {size} equipos en upper, el lower bracket debe empezar con '
+            f'{size // 2} o {size} equipos (o con ninguno si todos empiezan '
+            f'en upper y son 4 o más). Ahora tiene {entrants}.'
+        )
+    total_rounds = int(math.log2(size))
+    seeded = {seed: reg for seed, reg in enumerate(upper, start=1)}
+    order = bracket_seed_order(size)
+
+    upper_rounds = {}
+    for round_number in range(1, total_rounds + 1):
+        upper_rounds[round_number] = []
+        for position in range(1, (size >> round_number) + 1):
+            registrations = [None, None]
+            if round_number == 1:
+                registrations = [
+                    seeded[order[(position - 1) * 2]],
+                    seeded[order[(position - 1) * 2 + 1]],
+                ]
+            upper_rounds[round_number].append(create_match(
+                stage, round_number, position, registrations,
+                label=upper_round_label(round_number, total_rounds),
+                bracket='upper',
+            ))
+    for round_number in range(1, total_rounds):
+        for index, match in enumerate(upper_rounds[round_number]):
+            link_source(
+                ('win', match),
+                upper_rounds[round_number + 1][index // 2], index % 2 + 1,
             )
+
+    lower_rounds = []
+
+    def lower_round(pairs):
+        number = len(lower_rounds) + 1
+        matches = []
+        for position, (a, b) in enumerate(pairs, start=1):
+            match = create_match(
+                stage, number, position,
+                [a[1] if a[0] == 'reg' else None,
+                 b[1] if b[0] == 'reg' else None],
+                label=f'Lower Round {number}', bracket='lower',
+            )
+            link_source(a, match, 1)
+            link_source(b, match, 2)
+            matches.append(match)
+        lower_rounds.append(matches)
+        return [('win', match) for match in matches]
+
+    if entrants == 0:
+        feeders = [('lose', match) for match in upper_rounds[1]]
+        round_number = 2
+    else:
+        feeders = [('reg', reg) for reg in lower]
+        round_number = 1
+    while round_number <= total_rounds:
+        drops = [('lose', match) for match in upper_rounds[round_number]]
+        if round_number % 2 == 0:
+            # Crossing the drops avoids repeating upper matchups too soon.
+            drops.reverse()
+        while len(feeders) > len(drops):
+            feeders = lower_round([
+                (feeders[i], feeders[i + 1])
+                for i in range(0, len(feeders), 2)
+            ])
+        feeders = lower_round(list(zip(feeders, drops)))
+        round_number += 1
+
+    for match in lower_rounds[-1]:
+        match.label = 'Lower Final'
+        match.save(update_fields=['label'])
+
+    grand_final = create_match(
+        stage, 1, 1, [None, None], label='Grand Final', bracket='final'
+    )
+    link_source(('win', upper_rounds[total_rounds][0]), grand_final, 1)
+    link_source(feeders[0], grand_final, 2)
 
 
 def build_groups(stage, regs):
     if len(regs) < 2:
-        raise TournamentError('At least 2 participants are needed.')
+        raise TournamentError('Se necesitan al menos 2 participantes.')
     if stage.number_of_groups > len(regs) // 2:
         raise TournamentError(
-            'Too many groups: every group needs at least 2 participants.'
+            'Demasiados grupos: cada grupo necesita al menos 2 '
+            'participantes.'
         )
     groups = []
     distribution = snake_distribution(regs, stage.number_of_groups)
@@ -249,28 +395,41 @@ def build_groups(stage, regs):
 
 
 @transaction.atomic
-def draw_stage(stage, registration_ids=None, shuffle=True):
+def draw_stage(stage, registration_ids=None, shuffle=True,
+               lower_registration_ids=None):
     """Builds the stage: assigns participants (randomly when ``shuffle``,
-    otherwise keeping the given/seed order), groups and matches."""
+    otherwise keeping the given/seed order), groups and matches.
+    ``lower_registration_ids``: double elimination teams that start in the
+    lower bracket."""
     stage = Stage.objects.select_for_update().get(pk=stage.pk)
     if stage.matches.filter(status='completed', is_bye=False).exists():
         raise TournamentError(
-            'The stage already has results. Reset it before a new draw.'
+            'La fase ya tiene resultados. Reiníciala antes de un nuevo '
+            'sorteo.'
         )
-    regs = resolve_participants(stage, registration_ids)
-    if len(regs) < 2:
-        raise TournamentError('At least 2 participants are needed.')
+    regs, lower = resolve_participants(
+        stage, registration_ids, lower_registration_ids
+    )
+    if len(regs) + len(lower) < 2:
+        raise TournamentError('Se necesitan al menos 2 participantes.')
     if shuffle:
         random.shuffle(regs)
+        random.shuffle(lower)
 
     clear_stage(stage)
     StageParticipant.objects.bulk_create([
         StageParticipant(stage=stage, registration=reg, seed=seed)
         for seed, reg in enumerate(regs, start=1)
+    ] + [
+        StageParticipant(stage=stage, registration=reg, seed=seed,
+                         starts_in_lower=True)
+        for seed, reg in enumerate(lower, start=len(regs) + 1)
     ])
 
     if stage.stage_type == 'single_elimination':
         generate_single_elimination(stage, regs)
+    elif stage.stage_type == 'double_elimination':
+        generate_double_elimination(stage, regs, lower)
     elif stage.stage_type == 'round_robin':
         generate_round_robin(stage, build_groups(stage, regs))
     elif stage.stage_type == 'free_for_all':
@@ -289,6 +448,19 @@ def clear_stage(stage):
     stage.matches.all().delete()
     stage.groups.all().delete()
     stage.participants.all().delete()
+
+
+def apply_best_of(stage):
+    """Updates the best of of the matches not played yet after the stage
+    settings change (manual stages keep the values set by hand)."""
+    if stage.stage_type == 'manual':
+        return
+    pending = stage.matches.exclude(status='completed')
+    for match in pending:
+        best_of = stage.best_of_for(match.label)
+        if match.best_of != best_of:
+            match.best_of = best_of
+            match.save(update_fields=['best_of'])
 
 
 @transaction.atomic
@@ -320,8 +492,8 @@ def ensure_downstream_editable(match):
         if target is not None and target.status == 'completed' \
                 and not target.is_bye:
             raise TournamentError(
-                f'Match {target.id} (next in bracket) already has a result. '
-                'Reset it first.'
+                f'El match {target.id} (siguiente en la llave) ya tiene '
+                'resultado. Reinícialo primero.'
             )
 
 
@@ -332,17 +504,17 @@ def decide_winner(match, entries, winner_id):
              if e.registration_id == winner_id), None
         )
         if winner is None:
-            raise TournamentError('The winner must be a participant.')
+            raise TournamentError('El ganador debe ser un participante.')
         return winner
     if match.stage.stage_type == 'free_for_all' or len(entries) > 2:
         best = [e for e in entries if e.placement == 1]
         return best[0].registration if len(best) == 1 else None
     a, b = entries
     if a.score == b.score:
-        if match.stage.allows_draws:
+        if match.can_draw:
             return None
         raise TournamentError(
-            'Draws are not allowed in this stage: send the winner.'
+            f'Un Bo{match.best_of} no termina en empate: define al ganador.'
         )
     return a.registration if a.score > b.score else b.registration
 
@@ -359,7 +531,8 @@ def assign_placements(entries):
 
 
 @transaction.atomic
-def record_result(match, scores=None, winner_id=None, placements=None):
+def record_result(match, scores=None, winner_id=None, placements=None,
+                  draw=False):
     """The admin in charge defines the winner (``winner_id``); the scores
     are optional for 1 vs 1 matches. When only scores are sent the winner is
     the one with the highest score. Free for all matches need the points of
@@ -369,28 +542,41 @@ def record_result(match, scores=None, winner_id=None, placements=None):
     free for all): {registration_id: placement}."""
     match = Match.objects.select_for_update().get(pk=match.pk)
     if match.is_bye:
-        raise TournamentError('Bye matches have no result.')
+        raise TournamentError('Un match libre (bye) no tiene resultado.')
     if match.status == 'canceled':
-        raise TournamentError('The match is canceled.')
+        raise TournamentError('El match está cancelado.')
     entries = list(match.participants.select_related('registration'))
     if len(entries) < 2 or any(e.registration_id is None for e in entries):
-        raise TournamentError('The match participants are not defined yet.')
+        raise TournamentError('Aún no están definidos los participantes.')
     registration_ids = {e.registration_id for e in entries}
+    if draw:
+        if not match.can_draw:
+            raise TournamentError(
+                'Solo puede haber empate en una liga con Bo par (ej. Bo2).'
+            )
+        if winner_id is not None:
+            raise TournamentError('Un empate no tiene ganador.')
+        scores = scores or dict.fromkeys(registration_ids, 0)
+        if len(set(scores.values())) > 1:
+            raise TournamentError(
+                'En un empate ambos tienen el mismo marcador.'
+            )
     if not scores:
         if winner_id is None:
-            raise TournamentError('Send the winner or the scores.')
+            raise TournamentError('Envía el ganador o el marcador.')
         if match.stage.stage_type == 'free_for_all' or len(entries) > 2:
             raise TournamentError(
-                'Free for all matches need the points of every participant.'
+                'En todos contra todos se necesitan los puntos de cada '
+                'participante.'
             )
         scores = dict.fromkeys(registration_ids, 0)
     if set(scores) != registration_ids:
         raise TournamentError(
-            'A score must be sent for every participant of the match.'
+            'Falta el marcador de algún participante del match.'
         )
     if placements and set(placements) != registration_ids:
         raise TournamentError(
-            'A placement must be sent for every participant.'
+            'Falta la posición de algún participante.'
         )
 
     old_winner_id = match.winner_id
@@ -408,7 +594,7 @@ def record_result(match, scores=None, winner_id=None, placements=None):
     winner = decide_winner(match, entries, winner_id)
     if winner is None and (match.next_match_id or match.loser_next_match_id):
         raise TournamentError(
-            'This match feeds a bracket: a winner is required.'
+            'Este match alimenta una llave: debe tener un ganador.'
         )
     winner_changed = (winner.id if winner else None) != old_winner_id
     if match.status == 'completed' and winner_changed:
@@ -444,7 +630,7 @@ def loser_of(match, entries):
 def reset_result(match):
     match = Match.objects.select_for_update().get(pk=match.pk)
     if match.is_bye:
-        raise TournamentError('Bye matches cannot be reset.')
+        raise TournamentError('Un match libre (bye) no se puede reiniciar.')
     ensure_downstream_editable(match)
     match.participants.update(score=0, placement=None)
     if match.next_match_id and match.winner_id:
@@ -461,6 +647,7 @@ def reset_result(match):
 
 
 def update_progress(stage):
+    was_completed = stage.status == 'completed'
     pending = stage.matches.exclude(status__in=['completed', 'canceled'])
     played = stage.matches.filter(status='completed', is_bye=False)
     if not stage.matches.exists() or not played.exists():
@@ -484,6 +671,40 @@ def update_progress(stage):
             and tournament.status != tournament_status:
         tournament.status = tournament_status
         tournament.save(update_fields=['status'])
+    sync_next_stage(stage, was_completed)
+
+
+def next_stage(stage):
+    return Stage.objects.filter(
+        tournament=stage.tournament, order__gt=stage.order
+    ).order_by('order').first()
+
+
+def has_results(stage):
+    return stage.matches.filter(status='completed', is_bye=False).exists()
+
+
+def sync_next_stage(stage, was_completed):
+    """Groups / leagues with qualifiers feed the next stage automatically:
+    when every match is played, the qualifiers (seeded by standings: 1st of
+    each group, then 2nd...) are drawn into the next stage. If a result is
+    reset and the next stage has not started, it is cleared again."""
+    if stage.stage_type not in ['round_robin', 'free_for_all'] \
+            or stage.advance_per_group < 1:
+        return
+    following = next_stage(stage)
+    if following is None or has_results(following):
+        return
+    if stage.status == 'completed':
+        try:
+            with transaction.atomic():
+                draw_stage(following, shuffle=False)
+        except TournamentError:
+            # e.g. the qualifiers do not fit a bracket: the admin will see
+            # the reason when drawing the next stage by hand.
+            pass
+    elif was_completed:
+        reset_stage(following)
 
 
 # --------------------------------------------------------------- standings
@@ -590,7 +811,9 @@ def schedule_stage(stage, start, interval_minutes, parallel=1,
     """Assigns dates to the matches of a stage in order (round, position),
     playing ``parallel`` matches at the same time every slot."""
     if parallel < 1 or interval_minutes < 1:
-        raise TournamentError('parallel and interval must be positive.')
+        raise TournamentError(
+            'Los matchs en paralelo y el intervalo deben ser positivos.'
+        )
     matches = stage.matches.filter(is_bye=False).exclude(
         status__in=['completed', 'canceled']
     ).order_by('round', 'group__order', 'position')
