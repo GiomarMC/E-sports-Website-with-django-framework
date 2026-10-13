@@ -5,6 +5,7 @@ import {
   Broadcast,
   CalendarPlus,
   CheckCircle,
+  CircleNotch,
   ClipboardText,
   ListBullets,
   ListNumbers,
@@ -330,7 +331,7 @@ function StagePanel({
               </Button>
             )}
             <Button variant="secondary" icon={<CalendarPlus size={16} />} onClick={() => setModal('schedule')} disabled={!list.length}>
-              Programar horarios
+              Horarios automáticos
             </Button>
             <StageMenu
               onEdit={() => setModal('edit')}
@@ -794,6 +795,13 @@ function StageMenu({
 
 function AdminMatchRow({ match, onResult, onEdit }: { match: Match; onResult: () => void; onEdit: () => void }) {
   const [date, setDate] = useState(toInputDateTime(match.scheduled_at))
+  // Keep the field in sync when the date changes elsewhere (automatic
+  // schedule, another admin, a refetch).
+  const [syncedDate, setSyncedDate] = useState(match.scheduled_at)
+  if (match.scheduled_at !== syncedDate) {
+    setSyncedDate(match.scheduled_at)
+    setDate(toInputDateTime(match.scheduled_at))
+  }
   const invalidate = [['matches'], ['stage'], ['tournament']]
   const patch = useApiMutation({
     request: (body: Record<string, unknown>) => api(`matches/${match.id}/`, { method: 'PATCH', body }),
@@ -809,6 +817,11 @@ function AdminMatchRow({ match, onResult, onEdit }: { match: Match; onResult: ()
   const completed = match.status === 'completed'
   const ffa = match.participants.length > 2
   const dateChanged = date !== toInputDateTime(match.scheduled_at)
+  // The date is saved when leaving the field (or pressing Enter): no extra
+  // button that would move the row.
+  const saveDate = () => {
+    if (dateChanged) patch.mutate({ scheduled_at: fromInputDateTime(date) })
+  }
 
   const [a, b] = [...match.participants].sort((x, y) => x.slot - y.slot)
   const scored = hasScore(match)
@@ -854,14 +867,15 @@ function AdminMatchRow({ match, onResult, onEdit }: { match: Match; onResult: ()
               type="datetime-local"
               value={date}
               onChange={(e) => setDate(e.target.value)}
+              onBlur={saveDate}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               className="h-8 w-52 text-xs"
-              aria-label="Fecha y hora"
+              aria-label="Fecha y hora (se guarda al salir del campo)"
+              title="Se guarda al salir del campo"
             />
-            {dateChanged && (
-              <Button size="sm" loading={patch.isPending} onClick={() => patch.mutate({ scheduled_at: fromInputDateTime(date) })}>
-                Guardar
-              </Button>
-            )}
+            <span className="grid size-4 place-items-center text-ink-400" aria-live="polite">
+              {patch.isPending && <CircleNotch size={14} className="animate-spin" />}
+            </span>
           </div>
           <span className="text-xs text-ink-400">
             {match.label ? roundLabel(match.label, match.round) : `Match ${match.position}`} · Bo{match.best_of}
@@ -1336,7 +1350,7 @@ function ScheduleModal({ stage, onClose }: { stage: Stage; onClose: () => void }
     <Modal
       open
       onClose={onClose}
-      title="Programar horarios"
+      title="Horarios automáticos"
       description="Asigna fecha y hora a los matchs en orden de ronda. Luego puedes ajustar cada uno a mano."
       footer={
         <>
