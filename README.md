@@ -1,6 +1,6 @@
 # Esports Web
 
-Backend (REST API) for managing the esports tournaments of the school: games,
+Website and REST API for managing the esports tournaments of the school: games,
 public team/player registration with dynamic fees, configurable tournament
 formats (groups, single elimination, free for all, manual brackets), match
 scheduling, results and live stream links.
@@ -95,6 +95,7 @@ corrected while the next match has not been played.
 
 - Python 3.11+
 - Docker and Docker Compose (for PostgreSQL)
+- Node.js 22+ and pnpm 11 (frontend)
 
 ## Installation
 
@@ -112,6 +113,35 @@ python manage.py runserver
 Without `POSTGRES_*` / `POSTGRES_URL` variables a local SQLite database is
 used.
 
+## Frontend
+
+React + TypeScript (Vite), Tailwind CSS, TanStack Query and Motion, in
+`frontend/`. Public site (games, rules, teams, groups and brackets, schedule,
+streams, registration form) and the admin panel in `/admin`.
+
+```zsh
+cd frontend
+pnpm install       # pnpm 11 (do not use npm: the lockfile is pnpm-lock.yaml)
+pnpm dev           # http://localhost:5173 (proxies /api and /media to :8000)
+pnpm test          # unit tests (vitest)
+pnpm build         # production build in frontend/dist
+```
+
+In production set `VITE_API_URL` to the API URL when it is served from
+another domain (and add the frontend domain to `CORS_ALLOWED_ORIGINS`). The
+accent color is defined once in `frontend/src/index.css` (`--color-accent`).
+
+## Demo data
+
+```zsh
+python manage.py seed_demo --images   # games, teams, groups, brackets, results
+python manage.py seed_demo --reset    # replace them
+```
+
+It also creates one admin per game (`admin_dota2`, `admin_brawl_stars`, ...);
+their password is in `esports/management/commands/seed_demo.py`. Local
+development only.
+
 ## Tests
 
 ```zsh
@@ -123,6 +153,7 @@ coverage report --show-missing
 ## Folder Structure
 
 ```
+frontend/             React site and admin panel
 core/                 settings, urls (Swagger in /api/docs/)
 esports/
     models.py         data model
@@ -131,6 +162,7 @@ esports/
     views.py
     permissions.py    superadmin / game admin permissions
     signals.py        default superadmin
+    management/       seed_demo command
     tests/            factories + tests (models, services, endpoints)
 ```
 
