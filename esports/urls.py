@@ -3,8 +3,9 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AdminViewSet, ContactInfoViewSet, GameViewSet, MatchViewSet,
-    MediaContentViewSet, PaymentMethodViewSet, RegistrationViewSet,
-    SiteSettingsView, StageViewSet, StreamViewSet, TournamentViewSet,
+    MediaContentViewSet, OrganizerContactViewSet, PaymentMethodViewSet,
+    RegistrationViewSet, SiteSettingsView, StageViewSet, StreamViewSet,
+    TournamentViewSet,
 )
 
 
@@ -23,6 +24,10 @@ router.register(r'matches', MatchViewSet, basename='matches')
 router.register(r'streams', StreamViewSet, basename='streams')
 router.register(r'media', MediaContentViewSet, basename='media')
 router.register(r'contacts', ContactInfoViewSet, basename='contacts')
+router.register(
+    r'organizer-contacts', OrganizerContactViewSet,
+    basename='organizer-contacts',
+)
 
 urlpatterns = [
     path('settings/', SiteSettingsView.as_view(), name='site-settings'),

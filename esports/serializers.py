@@ -9,9 +9,9 @@ from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
 from .models import (
     AdminGame, ContactInfo, CustomUser, Game, Match, MatchParticipant,
-    MediaContent, PaymentMethod, Registration, RegistrationMember,
-    SiteSettings, Stage, StageGroup, Stream, Tournament,
-    validate_payment_method, validate_team_size,
+    MediaContent, OrganizerContact, PaymentMethod, Registration,
+    RegistrationMember, SiteSettings, Stage, StageGroup, Stream, Tournament,
+    normalize_contact, validate_payment_method, validate_team_size,
 )
 
 
@@ -909,3 +909,25 @@ class ContactInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContactInfo
         fields = ['id', 'platform', 'link']
+
+
+class OrganizerContactSerializer(serializers.ModelSerializer):
+    kind_display = serializers.CharField(
+        source='get_kind_display', read_only=True
+    )
+    link = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = OrganizerContact
+        fields = ['id', 'tournament', 'kind', 'kind_display', 'name',
+                  'role', 'value', 'link', 'active', 'order']
+
+    def validate(self, data):
+        kind = data.get('kind', getattr(self.instance, 'kind', None))
+        if 'value' in data or 'kind' in data:
+            value = data.get('value', getattr(self.instance, 'value', ''))
+            value, error = normalize_contact(kind, value)
+            if error:
+                raise serializers.ValidationError({'value': error})
+            data['value'] = value
+        return data

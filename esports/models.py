@@ -3,7 +3,9 @@ from decimal import Decimal
 
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator, MinValueValidator
+from django.core.validators import (
+    FileExtensionValidator, MinValueValidator, URLValidator, validate_email,
+)
 from django.db import models
 from django.utils import timezone
 
@@ -701,3 +703,92 @@ class ContactInfo(models.Model):
 
     def __str__(self):
         return f"{self.platform}: {self.link}"
+
+
+WHATSAPP_GROUP_PREFIX = 'https://chat.whatsapp.com/'
+
+
+class OrganizerContact(models.Model):
+    """How to reach the organizers: a WhatsApp number, a WhatsApp group,
+    a phone or an email. Without tournament it is a general contact of the
+    event; otherwise it belongs to that tournament."""
+    KIND_CHOICES = (
+        ('whatsapp', 'WhatsApp'),
+        ('whatsapp_group', 'Grupo de WhatsApp'),
+        ('phone', 'Teléfono'),
+        ('email', 'Correo'),
+        ('link', 'Otro link'),
+    )
+    NUMBERS = ('whatsapp', 'phone')
+
+    tournament = models.ForeignKey(
+        'Tournament', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='contacts'
+        )
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    name = models.CharField(max_length=100)
+    role = models.CharField(max_length=100, blank=True)
+    value = models.CharField(max_length=255)
+    active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"{self.get_kind_display()}: {self.name}"
+
+    def clean(self):
+        value, error = normalize_contact(self.kind, self.value)
+        if error:
+            raise ValidationError({'value': error})
+        self.value = value
+
+    @property
+    def link(self):
+        """Link that opens the contact (chat, call or email)."""
+        if self.kind in self.NUMBERS:
+            digits = ''.join(ch for ch in self.value if ch.isdigit())
+            if len(digits) == 9:
+                digits = f'51{digits}'
+            if self.kind == 'whatsapp':
+                return f'https://wa.me/{digits}'
+            return f'tel:+{digits}'
+        if self.kind == 'email':
+            return f'mailto:{self.value}'
+        return self.value
+
+
+def normalize_contact(kind, value):
+    """Returns (clean value, error message or None)."""
+    value = (value or '').strip()
+    if not value:
+        return value, 'Este campo es obligatorio.'
+    if kind in OrganizerContact.NUMBERS:
+        digits = ''.join(ch for ch in value if ch.isdigit())
+        if len(digits) == 9 and digits.startswith('9'):
+            return digits, None
+        if len(digits) == 11 and digits.startswith('519'):
+            return digits[2:], None
+        if value.startswith('+') and 8 <= len(digits) <= 15:
+            return f'+{digits}', None
+        return value, (
+            'Escribe un celular de 9 dígitos (o con +código de país).'
+        )
+    if kind == 'email':
+        try:
+            validate_email(value)
+        except ValidationError:
+            return value, 'Escribe un correo válido.'
+        return value, None
+    try:
+        URLValidator()(value)
+    except ValidationError:
+        return value, 'Escribe un link válido (https://...).'
+    if kind == 'whatsapp_group' and \
+            not value.startswith(WHATSAPP_GROUP_PREFIX):
+        return value, (
+            f'El link del grupo empieza con {WHATSAPP_GROUP_PREFIX}'
+        )
+    return value, None

@@ -12,6 +12,7 @@ import {
   UsersThree,
 } from '@phosphor-icons/react'
 import { AnimatePresence, motion } from 'motion/react'
+import { TournamentContacts } from '../../components/contacts'
 import { Countdown } from '../../components/countdown'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
@@ -346,6 +347,7 @@ function Overview({ game, tournament }: { game: Game; tournament?: Tournament })
               )}
             </InfoRow>
           </dl>
+          <TournamentContacts tournamentId={tournament.id} className="border-t border-white/[0.05] px-5 py-4" />
           {tournament.registration.is_open && (
             <div className="p-5 pt-2">
               <Link to={`/torneos/${tournament.id}/inscripcion`}>

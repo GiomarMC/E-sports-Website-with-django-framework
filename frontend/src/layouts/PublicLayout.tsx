@@ -12,8 +12,9 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthProvider'
+import { ContactList } from '../components/contacts'
 import { cx, LiveDot } from '../components/ui'
-import { useContacts, useSettings, useStreams } from '../lib/queries'
+import { useContacts, useOrganizerContacts, useSettings, useStreams } from '../lib/queries'
 
 const links = [
   { to: '/', label: 'Juegos', icon: GameController, end: true },
@@ -141,6 +142,7 @@ export default function PublicLayout() {
 
 function Footer({ eventName }: { eventName?: string }) {
   const { data: contacts } = useContacts()
+  const { data: organizers } = useOrganizerContacts({ general: true })
   return (
     <footer className="mt-24 border-t border-white/[0.06]">
       <div className="mx-auto grid max-w-[1400px] gap-10 px-4 py-12 md:grid-cols-[2fr_1fr_1fr] md:px-8">
@@ -149,6 +151,12 @@ function Footer({ eventName }: { eventName?: string }) {
           <p className="mt-4 max-w-[45ch] text-sm leading-relaxed text-ink-400">
             Torneos de esports de la escuela. Inscripciones, cronograma, resultados y transmisiones en un solo lugar.
           </p>
+          {!!organizers?.length && (
+            <div className="mt-6 max-w-sm">
+              <p className="mb-3 text-sm font-semibold">Habla con la organización</p>
+              <ContactList contacts={organizers} />
+            </div>
+          )}
         </div>
         <div>
           <p className="mb-3 text-sm font-semibold">Torneo</p>

@@ -18,8 +18,9 @@ from django.utils import timezone
 
 from esports import services
 from esports.models import (
-    AdminGame, ContactInfo, CustomUser, Game, PaymentMethod, Registration,
-    RegistrationMember, SiteSettings, Stage, Stream, Tournament,
+    AdminGame, ContactInfo, CustomUser, Game, OrganizerContact,
+    PaymentMethod, Registration, RegistrationMember, SiteSettings, Stage,
+    Stream, Tournament,
 )
 
 # Password of the demo game admins (local development only).
@@ -140,6 +141,12 @@ class Command(BaseCommand):
                 start_date=timezone.now() + timedelta(days=index - 1),
                 fee_per_player=data['fee'],
             )
+            # Demo data: fake number and group link.
+            OrganizerContact.objects.create(
+                tournament=tournament, kind='whatsapp',
+                name=f"Organizador de {data['name']}", role='Admin del juego',
+                value=f'9100000{index:02d}',
+            )
             regs = [
                 self.create_registration(tournament, name, game)
                 for name in data['teams']
@@ -150,6 +157,14 @@ class Command(BaseCommand):
             )
             getattr(self, f"format_{index}")(tournament, regs)
 
+        OrganizerContact.objects.create(
+            kind='whatsapp_group', name='Comunidad UNSA Esports (demo)',
+            value='https://chat.whatsapp.com/DemoEsportsEPCC',
+        )
+        OrganizerContact.objects.create(
+            kind='email', name='Organización', order=1,
+            value='esports.demo@example.com',
+        )
         Stream.objects.create(
             title='Canal oficial', platform='twitch',
             url='https://www.twitch.tv/unsa_esports', is_live=True,

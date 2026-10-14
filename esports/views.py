@@ -20,7 +20,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from esports import services
 from esports.models import (
-    AdminGame, ContactInfo, Game, Match, MediaContent, PaymentMethod,
+    AdminGame, ContactInfo, Game, Match, MediaContent, OrganizerContact,
+    PaymentMethod,
     Registration, SiteSettings, Stage, Stream, Tournament,
 )
 from esports.permissions import (
@@ -32,7 +33,8 @@ from esports.serializers import (
     AdminUpdateSerializer, AssignGamesSerializer, ChangePasswordSerializer,
     ContactInfoSerializer, DrawSerializer, GameCreateUpdateSerializer,
     GamePublicSerializer, GroupStandingsSerializer, MatchSerializer,
-    MediaContentSerializer, PaymentMethodSerializer,
+    MediaContentSerializer, OrganizerContactSerializer,
+    PaymentMethodSerializer,
     PublicRegistrationSerializer, RejectSerializer,
     RegistrationCreateSerializer, RegistrationSerializer,
     RegistrationStatusSerializer, ResetPasswordSerializer, ResultSerializer,
@@ -873,3 +875,51 @@ class ContactInfoViewSet(viewsets.ModelViewSet):
     queryset = ContactInfo.objects.all()
     serializer_class = ContactInfoSerializer
     permission_classes = [ReadOnlyOrSuperAdmin]
+
+
+class OrganizerContactViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+    """WhatsApp numbers, groups, phones and emails of the organizers.
+    General contacts (no tournament) are managed by superadmins; the
+    contacts of a tournament by the admins of its game."""
+    serializer_class = OrganizerContactSerializer
+    permission_classes_by_action = {
+        'list': PUBLIC,
+        'retrieve': PUBLIC,
+    }
+    default_permissions = [IsAdminOrSuperAdmin]
+
+    def get_queryset(self):
+        contacts = OrganizerContact.objects.select_related('tournament')
+        params = self.request.query_params
+        if params.get('tournament'):
+            contacts = contacts.filter(tournament_id=params['tournament'])
+        if query_flag(self.request, 'general'):
+            contacts = contacts.filter(tournament__isnull=True)
+        user = self.request.user
+        if is_admin_user(user):
+            return contacts.filter(
+                Q(tournament__isnull=True)
+                | Q(tournament__game__in=user.managed_games())
+            )
+        return contacts.filter(active=True).filter(
+            Q(tournament__isnull=True) | Q(tournament__game__active=True)
+        )
+
+    def check_contact_game(self, tournament):
+        check_game_permission(
+            self.request.user, tournament.game if tournament else None
+        )
+
+    def perform_create(self, serializer):
+        self.check_contact_game(serializer.validated_data.get('tournament'))
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self.check_contact_game(serializer.instance.tournament)
+        if 'tournament' in serializer.validated_data:
+            self.check_contact_game(serializer.validated_data['tournament'])
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self.check_contact_game(instance.tournament)
+        instance.delete()

@@ -13,6 +13,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { TournamentContacts } from '../../components/contacts'
 import { PaymentMethods } from '../../components/payment'
 import { Button, cx, EmptyState, ErrorState, Field, Input, Skeleton } from '../../components/ui'
 import { useToast } from '../../components/Toast'
@@ -457,6 +458,7 @@ function RegistrationForm({ tournament, onDone }: { tournament: Tournament; onDo
           confirmará al equipo.
           {tournament.registration.ends_at && <> Inscripciones hasta el {formatDate(tournament.registration.ends_at, true)}.</>}
         </p>
+        <TournamentContacts tournamentId={tournament.id} title="¿Dudas? Escribe a los organizadores" />
       </aside>
     </form>
   )

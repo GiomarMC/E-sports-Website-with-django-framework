@@ -9,6 +9,7 @@ import type {
   Game,
   GroupStandings,
   Match,
+  OrganizerContact,
   PaymentMethod,
   PublicRegistration,
   Quote,
@@ -52,6 +53,7 @@ export const keys = {
   me: ['me'] as const,
   contacts: ['contacts'] as const,
   paymentMethods: (game: number) => ['payment-methods', game] as const,
+  organizerContacts: (params?: Params) => ['organizer-contacts', params ?? {}] as const,
 }
 
 interface QueryConfig {
@@ -110,6 +112,11 @@ export const useStreams = (params?: Params) => useApiQuery<Stream[]>(keys.stream
 
 export const usePaymentMethods = (game: number) =>
   useApiQuery<PaymentMethod[]>(keys.paymentMethods(game), 'payment-methods/', { params: { game }, enabled: game > 0 })
+
+/** ``{ tournament: id }`` for a tournament, ``{ general: true }`` for the
+ * general contacts of the event. */
+export const useOrganizerContacts = (params: Params, enabled = true) =>
+  useApiQuery<OrganizerContact[]>(keys.organizerContacts(params), 'organizer-contacts/', { params, enabled })
 
 export const useContacts = () => useApiQuery<ContactInfo[]>(keys.contacts, 'contacts/')
 

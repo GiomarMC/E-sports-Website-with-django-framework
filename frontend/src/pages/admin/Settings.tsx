@@ -6,6 +6,7 @@ import { api } from '../../lib/api'
 import { fromInputDateTime, toInputDateTime } from '../../lib/format'
 import { useApiMutation, useContacts, useSettings } from '../../lib/queries'
 import type { SiteSettings } from '../../lib/types'
+import { OrganizerContactsPanel } from './OrganizerContacts'
 
 export default function SettingsPage() {
   const settings = useSettings()
@@ -114,6 +115,14 @@ function SettingsForm({ settings }: { settings: SiteSettings }) {
         </div>
       </form>
 
+      <div className="mt-10">
+        <OrganizerContactsPanel
+          tournamentId={null}
+          title="Contacto de la organización"
+          description="WhatsApp, grupo, teléfono o correo generales del evento. Se muestran en el pie de página y en los torneos que no tienen contactos propios."
+        />
+      </div>
+
       <Contacts />
     </>
   )
@@ -140,7 +149,7 @@ function Contacts() {
   return (
     <section className="surface mt-6 space-y-5 p-6">
       <div>
-        <h2 className="font-display text-lg font-semibold">Redes y contacto</h2>
+        <h2 className="font-display text-lg font-semibold">Redes sociales</h2>
         <p className="text-sm text-ink-400">Aparecen en el pie de página del sitio.</p>
       </div>
       <ul className="divide-y divide-white/[0.05]">

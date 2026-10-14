@@ -6,6 +6,7 @@ import {
   CalendarPlus,
   CheckCircle,
   CircleNotch,
+  AddressBook,
   ClipboardText,
   Wallet,
   ListBullets,
@@ -65,11 +66,12 @@ import {
 } from '../../lib/queries'
 import type { DrawResult, Match, Stage, StageType, Tournament } from '../../lib/types'
 import { FormatWizard } from './FormatWizard'
+import { OrganizerContactsPanel } from './OrganizerContacts'
 import { PaymentMethodsPanel } from './PaymentMethods'
 import { RegistrationsPanel } from './Registrations'
 import { RegistrationSwitch, TournamentForm } from './Tournaments'
 
-type Tab = 'fases' | 'inscripciones' | 'pagos'
+type Tab = 'fases' | 'inscripciones' | 'pagos' | 'contacto'
 
 export default function TournamentManage() {
   const tournamentId = Number(useParams().tournamentId)
@@ -119,12 +121,20 @@ export default function TournamentManage() {
             { value: 'fases', label: 'Fases y matchs', icon: <TreeStructure size={16} /> },
             { value: 'inscripciones', label: 'Inscripciones', icon: <ClipboardText size={16} /> },
             { value: 'pagos', label: 'Métodos de pago', icon: <Wallet size={16} /> },
+            { value: 'contacto', label: 'Contacto', icon: <AddressBook size={16} /> },
           ]}
         />
       </div>
 
       {tab === 'fases' && <StagesManager tournament={t} />}
       {tab === 'inscripciones' && <RegistrationsPanel tournamentId={t.id} />}
+      {tab === 'contacto' && (
+        <OrganizerContactsPanel
+          tournamentId={t.id}
+          title="Contacto del torneo"
+          description="WhatsApp de los organizadores o link del grupo del torneo. Aparecen en la página del torneo, en el formulario de inscripción y al consultar el estado. Si no agregas ninguno se muestran los contactos generales."
+        />
+      )}
       {tab === 'pagos' && (
         <PaymentMethodsPanel gameId={t.game} gameName={t.game_name} paid={Number(t.fee_per_player) > 0} />
       )}

@@ -1,4 +1,5 @@
 import type {
+  ContactKind,
   MatchStatus,
   PaymentMethodType,
   Platform,
@@ -98,6 +99,21 @@ export const paymentMethodLabel: Record<PaymentMethodType, string> = {
 export function formatPhone(value: string) {
   const digits = value.replace(/\D/g, '')
   return digits.length === 9 ? digits.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : value
+}
+
+export const contactKindLabel: Record<ContactKind, string> = {
+  whatsapp: 'WhatsApp',
+  whatsapp_group: 'Grupo de WhatsApp',
+  phone: 'Teléfono',
+  email: 'Correo',
+  link: 'Otro link',
+}
+
+/** Readable value of an organizer contact. */
+export function contactValue(contact: { kind: ContactKind; value: string }) {
+  if (contact.kind === 'whatsapp' || contact.kind === 'phone') return formatPhone(contact.value)
+  if (contact.kind === 'whatsapp_group') return 'Grupo de WhatsApp'
+  return contact.value.replace(/^https?:\/\//, '')
 }
 
 export const platformLabel: Record<Platform, string> = {

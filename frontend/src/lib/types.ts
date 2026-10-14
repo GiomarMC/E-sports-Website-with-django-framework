@@ -10,6 +10,7 @@ export type MatchStatus = 'scheduled' | 'live' | 'completed' | 'canceled'
 export type Platform = 'twitch' | 'youtube' | 'facebook' | 'kick' | 'tiktok' | 'other'
 export type Role = 'admin' | 'superadmin'
 export type PaymentMethodType = 'yape' | 'plin' | 'bank_transfer' | 'other'
+export type ContactKind = 'whatsapp' | 'whatsapp_group' | 'phone' | 'email' | 'link'
 
 export interface TournamentSummary {
   id: number
@@ -302,6 +303,21 @@ export interface MediaContent {
   file: string
   type: 'image' | 'video'
   uploaded_at: string
+}
+
+/** Organizer contact: general (tournament null) or of a tournament. */
+export interface OrganizerContact {
+  id: number
+  tournament: number | null
+  kind: ContactKind
+  kind_display: string
+  name: string
+  role: string
+  value: string
+  /** wa.me, tel:, mailto: or the link itself. */
+  link: string
+  active: boolean
+  order: number
 }
 
 export interface ContactInfo {
