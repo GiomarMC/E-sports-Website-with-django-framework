@@ -1,10 +1,10 @@
 import {
   ArrowLeft,
   CheckCircle,
-  Copy,
   Crown,
   ImageSquare,
   LockSimple,
+  MagnifyingGlass,
   Plus,
   Receipt,
   Trash,
@@ -47,7 +47,7 @@ const emptyMember = (): MemberForm => ({
 export default function RegisterPage() {
   const tournamentId = Number(useParams().tournamentId)
   const tournament = useTournament(tournamentId)
-  const [result, setResult] = useState<RegisterResponse | null>(null)
+  const [result, setResult] = useState<{ response: RegisterResponse; name: string } | null>(null)
 
   if (tournament.isPending) {
     return (
@@ -78,7 +78,7 @@ export default function RegisterPage() {
 
       <div className="mt-10">
         {result ? (
-          <Success result={result} tournament={tournament.data} />
+          <Success result={result.response} name={result.name} tournament={tournament.data} />
         ) : !tournament.data.registration.is_open ? (
           <EmptyState
             icon={<LockSimple size={24} />}
@@ -86,14 +86,21 @@ export default function RegisterPage() {
             description={tournament.data.registration.reason}
           />
         ) : (
-          <RegistrationForm tournament={tournament.data} onDone={setResult} />
+          <RegistrationForm tournament={tournament.data} onDone={(response, name) => setResult({ response, name })} />
         )}
       </div>
     </div>
   )
 }
 
-function RegistrationForm({ tournament, onDone }: { tournament: Tournament; onDone: (r: RegisterResponse) => void }) {
+function RegistrationForm({
+  tournament,
+  onDone,
+}: {
+  tournament: Tournament
+  /** ``name``: team name, or the nickname in individual games. */
+  onDone: (response: RegisterResponse, name: string) => void
+}) {
   const toast = useToast()
   const team = tournament.type_of_game === 'team'
   const min = tournament.min_players
@@ -167,7 +174,7 @@ function RegistrationForm({ tournament, onDone }: { tournament: Tournament; onDo
         body,
         auth: false,
       })
-      onDone(response)
+      onDone(response, team ? teamName.trim() : members[captain].nickname.trim())
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
       const apiError = error as ApiError
@@ -464,16 +471,8 @@ function RegistrationForm({ tournament, onDone }: { tournament: Tournament; onDo
   )
 }
 
-function Success({ result, tournament }: { result: RegisterResponse; tournament: Tournament }) {
-  const toast = useToast()
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(result.code)
-      toast.success('Código copiado')
-    } catch {
-      toast.error('No se pudo copiar, cópialo manualmente.')
-    }
-  }
+function Success({ result, tournament, name }: { result: RegisterResponse; tournament: Tournament; name: string }) {
+  const team = tournament.type_of_game === 'team'
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }}
@@ -492,18 +491,24 @@ function Success({ result, tournament }: { result: RegisterResponse; tournament:
       <h2 className="font-display text-3xl font-semibold">Inscripción enviada</h2>
       <p className="mt-2 leading-relaxed text-ink-300">
         Total registrado: <strong className="font-mono">{formatMoney(result.amount_due, tournament.currency)}</strong>. Un
-        administrador revisará tu comprobante. Guarda este código para consultar el estado:
+        administrador {Number(result.amount_due) > 0 ? 'revisará tu comprobante' : 'revisará y confirmará tu inscripción'}.
       </p>
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <code className="flex-1 truncate rounded-xl border border-white/[0.08] bg-ink-850 px-4 py-3 font-mono text-sm">
-          {result.code}
-        </code>
-        <Button variant="secondary" icon={<Copy size={16} />} onClick={copy}>
-          Copiar
-        </Button>
-      </div>
+      <p className="mt-4 flex gap-3 rounded-xl border border-white/[0.08] bg-ink-850 px-4 py-3 text-sm leading-relaxed text-ink-300">
+        <MagnifyingGlass size={18} className="mt-0.5 shrink-0 text-ink-100" />
+        <span>
+          Consulta el estado de tu inscripción en <strong className="text-ink-100">Mi inscripción</strong> ingresando{' '}
+          {team ? 'el nombre de tu equipo' : 'tu nickname'}{' '}
+          <strong className="text-ink-100">“{name}”</strong>
+          {team && ' o el nickname de cualquier integrante'}.
+        </span>
+      </p>
+      <TournamentContacts
+        tournamentId={tournament.id}
+        title="Mantente en contacto con los organizadores"
+        className="mt-8"
+      />
       <div className="mt-8 flex flex-wrap gap-3">
-        <Link to={`/inscripcion/estado?codigo=${result.code}`}>
+        <Link to={`/inscripcion/estado?buscar=${encodeURIComponent(name)}`}>
           <Button>Ver estado</Button>
         </Link>
         <Link to={`/juegos/${tournament.game}`}>

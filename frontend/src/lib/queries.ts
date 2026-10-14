@@ -14,6 +14,7 @@ import type {
   PublicRegistration,
   Quote,
   Registration,
+  RegistrationLookup,
   RegistrationStatusInfo,
   SiteSettings,
   Stage,
@@ -129,6 +130,14 @@ export const useQuote = (tournament: number, players: number) =>
 export const useRegistrationStatus = (code: string) =>
   useApiQuery<RegistrationStatusInfo>(['registration-status', code], `registrations/status/${code}/`, {
     enabled: code.length > 0,
+    retry: false,
+  })
+
+/** Public search of registrations by team name or nickname. */
+export const useRegistrationLookup = (term: string) =>
+  useApiQuery<RegistrationLookup>(['registration-lookup', term], 'registrations/lookup/', {
+    params: { q: term },
+    enabled: term.length >= 3,
     retry: false,
   })
 

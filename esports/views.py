@@ -36,7 +36,8 @@ from esports.serializers import (
     MediaContentSerializer, OrganizerContactSerializer,
     PaymentMethodSerializer,
     PublicRegistrationSerializer, RejectSerializer,
-    RegistrationCreateSerializer, RegistrationSerializer,
+    RegistrationCreateSerializer, RegistrationLookupSerializer,
+    RegistrationSerializer,
     RegistrationStatusSerializer, ResetPasswordSerializer, ResultSerializer,
     ScheduleSerializer, SiteSettingsSerializer, StageDetailSerializer,
     StageSerializer, StreamSerializer, TournamentSerializer,
@@ -486,7 +487,9 @@ class RegistrationViewSet(ActionPermissionMixin,
     with ``POST /tournaments/{id}/register/`` and cannot be edited later."""
     serializer_class = RegistrationSerializer
     default_permissions = [IsGameAdmin]
-    permission_classes_by_action = {'check_status': PUBLIC}
+    permission_classes_by_action = {'check_status': PUBLIC, 'lookup': PUBLIC}
+    LOOKUP_MIN_LENGTH = 3
+    LOOKUP_LIMIT = 20
     # Registrations are final once sent: only PATCH (seed / is_active).
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
     parser_classes = [JSONParser, MultiPartParser, FormParser]
@@ -538,6 +541,45 @@ class RegistrationViewSet(ActionPermissionMixin,
             Registration.objects.select_related('tournament'), code=code
         )
         return Response(RegistrationStatusSerializer(registration).data)
+
+    @swagger_auto_schema(manual_parameters=[openapi.Parameter(
+        'q', openapi.IN_QUERY, type=openapi.TYPE_STRING,
+        description='Nombre del equipo o nickname (mínimo 3 letras).',
+    )])
+    @action(detail=False, methods=['get'], url_path='lookup')
+    def lookup(self, request):
+        """Public: status of the registrations by team name or player
+        nickname. Several teams can share a nickname, so every match is
+        returned (only public data)."""
+        term = request.query_params.get('q', '').strip()
+        if len(term) < self.LOOKUP_MIN_LENGTH:
+            raise ValidationError({'q': (
+                f'Escribe al menos {self.LOOKUP_MIN_LENGTH} letras del '
+                'nombre del equipo o del nickname.'
+            )})
+        visible = Registration.objects.filter(tournament__game__active=True)
+        # The exact name or nickname wins: "Kusi" does not list "Kusi12".
+        # Without exact matches, any team or nickname containing the term.
+        matches = visible.filter(
+            Q(team_name__iexact=term) | Q(members__nickname__iexact=term)
+        )
+        if not matches.exists():
+            matches = visible.filter(
+                Q(team_name__icontains=term)
+                | Q(members__nickname__icontains=term)
+            )
+        registrations = list(
+            Registration.objects.filter(pk__in=matches.values('pk'))
+            .select_related('tournament__game')
+            .prefetch_related('members')
+            .order_by('-created_at')[:self.LOOKUP_LIMIT + 1]
+        )
+        return Response({
+            'results': RegistrationLookupSerializer(
+                registrations[:self.LOOKUP_LIMIT], many=True
+            ).data,
+            'truncated': len(registrations) > self.LOOKUP_LIMIT,
+        })
 
     def review(self, registration, new_status, reason=''):
         registration.status = new_status

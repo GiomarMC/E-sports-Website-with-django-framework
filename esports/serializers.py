@@ -539,6 +539,21 @@ class RegistrationStatusSerializer(serializers.ModelSerializer):
             ]
 
 
+class RegistrationLookupSerializer(RegistrationStatusSerializer):
+    """Public search by team name or nickname: only public data (no code,
+    no student codes, contact data or voucher)."""
+    game_name = serializers.CharField(
+        source='tournament.game.name', read_only=True
+    )
+
+    class Meta(RegistrationStatusSerializer.Meta):
+        fields = [
+            'id', 'tournament', 'tournament_name', 'game_name',
+            'display_name', 'amount_due', 'status', 'rejection_reason',
+            'created_at', 'members'
+            ]
+
+
 class PublicRegistrationSerializer(serializers.ModelSerializer):
     """Participants list shown in the public site."""
     display_name = serializers.CharField(read_only=True)

@@ -147,6 +147,18 @@ export interface RegistrationStatusInfo {
   members: PublicMember[]
 }
 
+/** Public search result: only public data (no code, no contact data). */
+export interface RegistrationLookupItem extends Omit<RegistrationStatusInfo, 'code'> {
+  id: number
+  game_name: string
+}
+
+export interface RegistrationLookup {
+  results: RegistrationLookupItem[]
+  /** More registrations matched than the ones returned. */
+  truncated: boolean
+}
+
 export interface RegisterResponse {
   message: string
   code: string

@@ -275,3 +275,105 @@ class RegistrationViewSetTestCase(APITestCase):
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class RegistrationLookupTestCase(APITestCase):
+    """Public search of the status by team name or nickname."""
+
+    def setUp(self):
+        self.url = reverse('registrations-lookup')
+        self.team = RegistrationFactory(
+            team_name='Cóndores del Misti', status='confirmed'
+        )
+        RegistrationMemberFactory(
+            registration=self.team, nickname='Kusi', is_captain=True
+        )
+        # Another team with a player with the same nickname.
+        self.other = RegistrationFactory(
+            team_name='Llamas Furiosas', status='rejected',
+            rejection_reason='Voucher ilegible',
+        )
+        RegistrationMemberFactory(
+            registration=self.other, nickname='kusi', is_captain=True
+        )
+
+    def test_by_team_name(self):
+        # Act
+        response = self.client.get(self.url, {'q': 'cóndores'})
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [r['id'] for r in response.data['results']], [self.team.pk]
+        )
+        self.assertFalse(response.data['truncated'])
+
+    def test_shared_nickname_returns_every_team(self):
+        # Act
+        response = self.client.get(self.url, {'q': 'KUSI'})
+
+        # Assert
+        self.assertEqual(
+            {r['id'] for r in response.data['results']},
+            {self.team.pk, self.other.pk},
+        )
+        rejected = next(
+            r for r in response.data['results'] if r['id'] == self.other.pk
+        )
+        self.assertEqual(rejected['rejection_reason'], 'Voucher ilegible')
+
+    def test_only_public_data(self):
+        # Act
+        result = self.client.get(self.url, {'q': 'Kusi'}).data['results'][0]
+
+        # Assert
+        for private in ['code', 'contact_email', 'contact_phone', 'voucher']:
+            self.assertNotIn(private, result)
+        self.assertEqual(
+            set(result['members'][0]), {'nickname', 'is_captain'}
+        )
+
+    def test_private_data_is_not_searchable(self):
+        # Arrange
+        member = self.team.members.first()
+
+        # Act
+        by_code = self.client.get(self.url, {'q': member.student_code})
+        by_name = self.client.get(self.url, {'q': member.full_name})
+
+        # Assert
+        self.assertEqual(by_code.data['results'], [])
+        self.assertEqual(by_name.data['results'], [])
+
+    def test_exact_matches_hide_partial_ones(self):
+        # Arrange
+        partial = RegistrationFactory(team_name='Kusi Gaming')
+
+        # Act
+        exact = self.client.get(self.url, {'q': 'kusi'})
+        contains = self.client.get(self.url, {'q': 'kusi gam'})
+
+        # Assert
+        self.assertNotIn(partial.pk, [r['id'] for r in exact.data['results']])
+        self.assertEqual(
+            [r['id'] for r in contains.data['results']], [partial.pk]
+        )
+
+    def test_short_term_returns_400(self):
+        # Act
+        response = self.client.get(self.url, {'q': ' ku '})
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('q', response.data)
+
+    def test_hidden_games_are_not_listed(self):
+        # Arrange
+        self.team.tournament.game.active = False
+        self.team.tournament.game.save()
+
+        # Act
+        response = self.client.get(self.url, {'q': 'Cóndores'})
+
+        # Assert
+        self.assertEqual(response.data['results'], [])
