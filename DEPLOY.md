@@ -1,6 +1,6 @@
-# Despliegue en Oracle Cloud (Always Free) con CI/CD
+# Despliegue en una VM (Azure for Students u Oracle Cloud) con CI/CD
 
-Arquitectura: una VM ARM de Oracle con Docker Compose.
+Arquitectura: una VM Ubuntu con Docker Compose.
 
 ```
 Internet ──443──> Caddy (HTTPS automático, frontend, /media)
@@ -16,69 +16,86 @@ Archivos: `Dockerfile` (API), `deploy/Dockerfile.web` (frontend + Caddy),
 `deploy/Caddyfile`, `docker-compose.prod.yml`, `deploy/*.sh`,
 `.github/workflows/ci-cd.yml`.
 
+Los pasos 1 a 4 dependen del proveedor (Azure abajo, Oracle en el
+anexo); del 5 en adelante son iguales.
+
 ---
 
-## 1. Cuenta de Oracle Cloud
+## 1. Cuenta de Azure for Students
 
-1. Regístrate en <https://signup.cloud.oracle.com>. Pide una tarjeta solo
-   para verificar; no cobra mientras uses recursos **Always Free**.
-2. **Home region**: elige una cercana (São Paulo, Santiago o Querétaro).
-   No se puede cambiar y los recursos gratis solo existen ahí.
-3. Billing → Budgets → crea un presupuesto de **1 USD** con alerta por
-   correo. Si algo empezara a cobrar, te enteras.
+1. Entra a <https://azure.microsoft.com/free/students> → **Start free**.
+2. Inicia sesión (o crea una cuenta Microsoft) con tu correo
+   **@unsa.edu.pe** y verifica el correo de estudiante y tu teléfono.
+   No pide tarjeta.
+3. Recibes 100 USD de crédito por 12 meses (renovable mientras seas
+   estudiante) y servicios gratis, entre ellos una VM pequeña. Si el
+   crédito se acaba, los recursos se detienen: nunca cobra.
+4. Saldo restante: <https://www.microsoftazuresponsorships.com/Balance>
+   (o en el portal, buscar **Education**).
 
 ## 2. Crear la VM
 
-Menú → Compute → Instances → **Create instance**:
+Portal <https://portal.azure.com> → buscar **Virtual machines** →
+**Create** → **Azure virtual machine**:
 
-| Campo | Valor |
+| Pestaña / campo | Valor |
 |---|---|
-| Name | `esports` |
-| Image | **Canonical Ubuntu 24.04** |
-| Shape | Ampere → **VM.Standard.A1.Flex**, 4 OCPU y 24 GB (o 2 y 12) |
-| Networking | Crear VCN nueva con subred **pública** y **asignar IPv4 pública** |
-| SSH keys | Sube tu llave pública (`~/.ssh/id_ed25519.pub`) o descarga la que genera |
-| Boot volume | 100 GB |
+| Resource group | **Create new** → `esports` |
+| Virtual machine name | `esports` |
+| Region | Una permitida para estudiantes, cercana: *Brazil South* o *East US 2* |
+| Availability options | No infrastructure redundancy required |
+| Security type | Standard |
+| Image | **Ubuntu Server 24.04 LTS - x64 Gen2** |
+| Size | **See all sizes** → marca el filtro de **free services eligible** → **B1s** (1 vCPU, 1 GB) |
+| Authentication type | SSH public key |
+| Username | `ubuntu` |
+| SSH public key source | Use existing public key → pega `~/.ssh/id_ed25519.pub` |
+| Public inbound ports | Allow selected ports: **SSH (22), HTTP (80), HTTPS (443)** |
+| Disks → OS disk type | Premium SSD, tamaño **64 GiB (P6)** (gratis 12 meses) |
+| Networking | Deja la red y la IP pública nuevas que propone |
+| Management → Auto-shutdown | **Desactivado** |
 
-Verifica que diga **Always Free-eligible** y crea. Si sale *Out of
-capacity*, reintenta más tarde u otro *availability domain*.
+**Review + create** → **Create**. Al terminar, **Go to resource** y anota
+la **Public IP address**.
 
-Anota la **IP pública**. (Si el panel lo permite, conviértela en *Reserved
-public IP* para que no cambie nunca.)
+Si una región sale bloqueada ("not allowed by policy"), prueba otra: las
+cuentas de estudiante solo permiten algunas.
 
-## 3. Abrir los puertos 80 y 443
+## 3. Puertos
 
-Networking → Virtual cloud networks → tu VCN → Security Lists → *Default
-Security List* → **Add Ingress Rules** (Source CIDR `0.0.0.0/0`):
+Ya quedaron abiertos con *Public inbound ports* (80 y 443). Para revisar:
+VM → **Networking** → reglas de entrada con 80 y 443 en *Allow*.
 
-- TCP, destination port `80`
-- TCP, destination port `443`
-- UDP, destination port `443` (HTTP/3, opcional)
+## 4. Dominio gratis (HTTPS)
 
-El firewall interno de Ubuntu lo abre el script del paso 5.
+Azure da uno: VM → clic en la **Public IP address** → **Configuration**:
 
-## 4. Dominio (HTTPS)
+- **Assignment**: Static.
+- **DNS name label**: `esports-epcc` → **Save**.
 
-Opción gratis: **DuckDNS**.
+Tu dominio queda como `esports-epcc.brazilsouth.cloudapp.azure.com` (la
+región cambia según la que elegiste). También puedes usar DuckDNS o un
+subdominio de la escuela (registro **A** hacia la IP).
 
-1. Entra a <https://www.duckdns.org> con tu cuenta de GitHub.
-2. Crea un subdominio, p. ej. `esports-epcc` → `esports-epcc.duckdns.org`.
-3. En *current ip* pon la IP pública de la VM y guarda.
+### Día del evento: más potencia
 
-(Si la escuela te da `esports.epcc.unsa.edu.pe`, pide un registro **A**
-hacia la IP de la VM y usa ese dominio en el paso 6.)
+La B1s gratis aguanta el uso normal. Unos días antes del evento:
+VM → **Size** → **B2s** (2 vCPU, 4 GB) o **B2ms** (2 vCPU, 8 GB) →
+**Resize** (reinicia la VM ~1 minuto) y en `.env` pon
+`WEB_CONCURRENCY=4` y vuelve a desplegar. Se paga con el crédito (B2s
+cuesta alrededor de 1 USD por día). Después del evento vuelve a **B1s**.
 
 ## 5. Preparar el servidor
 
 ```bash
-ssh ubuntu@IP_DE_LA_VM
+ssh ubuntu@IP_DE_LA_VM          # escribe "yes" la primera vez
 curl -fsSL https://raw.githubusercontent.com/GiomarMC/E-sports-Website-with-django-framework/main/deploy/setup-server.sh | bash
 exit            # vuelve a entrar para que el grupo docker aplique
 ssh ubuntu@IP_DE_LA_VM
 ```
 
-Instala Docker, abre los puertos, clona el repo en `/opt/esports` y
-programa el respaldo diario.
+Crea swap si la VM tiene poca RAM, instala Docker, abre los puertos,
+clona el repo en `/opt/esports` y programa el respaldo diario.
 
 ## 6. Configuración (.env)
 
@@ -186,16 +203,28 @@ En otras ramas y pull requests solo corren los tests.
   `SECURE_HSTS_SECONDS` a `31536000` en `.env` y vuelve a desplegar.
 - **Actualizar Ubuntu**: `sudo apt update && sudo apt upgrade -y` cada
   cierto tiempo (y `sudo reboot` si lo pide).
-- **VM inactiva**: Oracle puede reclamar VMs Always Free con muy poco uso
-  durante 7 días en cuentas sin Pay As You Go. Con los respaldos fuera del
-  servidor, recrearla es repetir los pasos 2 a 8.
+- **Crédito de Azure**: revisa el saldo cada mes. Si se acaba, la VM se
+  detiene; con los respaldos fuera del servidor recrearla es repetir los
+  pasos 2 a 8.
 
 ## Problemas comunes
 
 | Síntoma | Causa probable |
 |---|---|
-| El certificado no se emite (logs de `web`) | DuckDNS no apunta a la IP, o faltan las reglas del paso 3 |
+| El certificado no se emite (logs de `web`) | El dominio no apunta a la IP, o faltan las reglas del paso 3 |
+| La construcción se corta o la VM se congela | Poca RAM: revisa que exista swap (`free -h`) |
 | `ERR_CONNECTION_REFUSED` | Puertos cerrados (paso 3) o `web` caído (`ps`) |
 | 400 Bad Request | El dominio no está en `ALLOWED_HOSTS` |
 | La API no queda *healthy* en el deploy | Revisa `logs backend`: `.env` incompleto o `SECRET_KEY` corta |
 | El deploy de Actions falla con *Permission denied* | Llave o `SSH_KNOWN_HOSTS` mal copiados |
+
+---
+
+## Anexo: Oracle Cloud (Always Free)
+
+Si tienes una cuenta de Oracle: VM **VM.Standard.A1.Flex** (ARM, hasta 4
+OCPU y 24 GB, *Always Free-eligible*) con **Canonical Ubuntu 24.04** y
+boot volume de 100 GB. Abre 80 y 443 en VCN → Security Lists → *Default
+Security List* → **Add Ingress Rules** (`0.0.0.0/0`, TCP). Dominio con
+DuckDNS (<https://www.duckdns.org>) apuntando a la IP. Con 24 GB usa
+`WEB_CONCURRENCY=8`. Luego sigue desde el paso 5.

@@ -25,6 +25,7 @@ COPY --chown=app:app deploy/entrypoint.sh /entrypoint.sh
 USER app
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]
+# Workers: WEB_CONCURRENCY in .env (2 for 1 GB of RAM, 4+ with 4 GB).
+ENV WEB_CONCURRENCY=2
 CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000", \
-     "--workers", "4", "--threads", "2", "--timeout", "60", \
-     "--access-logfile", "-"]
+     "--threads", "4", "--timeout", "60", "--access-logfile", "-"]

@@ -1,6 +1,6 @@
 #!/bin/bash
-# One-time setup of a fresh Ubuntu server (Oracle Cloud Always Free VM).
-# Run it as the default user (ubuntu):
+# One-time setup of a fresh Ubuntu server (Azure, Oracle Cloud or any VM).
+# Run it as the default user:
 #   curl -fsSL https://raw.githubusercontent.com/GiomarMC/E-sports-Website-with-django-framework/main/deploy/setup-server.sh | bash
 set -euo pipefail
 
@@ -11,6 +11,15 @@ echo "==> System updates"
 sudo apt-get update -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 sudo apt-get install -y ca-certificates curl git iptables-persistent
+
+echo "==> Swap (small VMs: building the images needs more than 1 GB)"
+if [ ! -f /swapfile ] && [ "$(free -m | awk '/Mem:/ {print $2}')" -lt 4000 ]; then
+  sudo fallocate -l 2G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
 
 echo "==> Docker"
 if ! command -v docker >/dev/null; then
