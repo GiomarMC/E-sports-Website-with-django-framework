@@ -110,6 +110,9 @@ export interface Member {
   game_account_id: string
   email: string
   phone: string
+  /** Comes from another university (``university`` says which one). */
+  is_external: boolean
+  university: string
   is_captain: boolean
 }
 
@@ -166,6 +169,8 @@ export interface RegisterResponse {
   code: string
   amount_due: string
   status: RegistrationStatus
+  /** Groups or clans to join, shown only after registering. */
+  join_links: OrganizerContact[]
 }
 
 export interface Quote {
@@ -329,6 +334,8 @@ export interface OrganizerContact {
   /** wa.me, tel:, mailto: or the link itself. */
   link: string
   active: boolean
+  /** Hidden in the site: shown only when the registration form is sent. */
+  registered_only: boolean
   order: number
 }
 

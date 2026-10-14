@@ -11,8 +11,9 @@ from rest_framework.test import APITestCase
 from esports.models import Registration, Tournament
 from esports.tests.factories import (
     AdminGameFactory, AdminUserFactory, GameFactory, IndividualGameFactory,
-    RegistrationFactory, RegistrationMemberFactory, SiteSettingsFactory,
-    SuperAdminFactory, TournamentFactory, image_file, member_payload,
+    OrganizerContactFactory, RegistrationFactory, RegistrationMemberFactory,
+    SiteSettingsFactory, SuperAdminFactory, TournamentFactory, image_file,
+    member_payload,
 )
 
 
@@ -412,6 +413,73 @@ class TournamentRegisterTestCase(APITestCase):
         self.assertEqual(registration.team_name, '')
         self.assertTrue(registration.members.get().is_captain)
         self.assertEqual(registration.contact_phone, '912345678')
+
+    def test_register_external_player_with_university(self):
+        # Arrange
+        members = member_payload(5)
+        members[1].update(is_external=True, university='  UCSM ')
+        members[2].update(is_external=False, university='UCSM')
+
+        # Act
+        response = self.client.post(
+            self.url, self.multipart_payload(members)
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        registration = Registration.objects.get(code=response.data['code'])
+        external, internal = registration.members.order_by('id')[1:3]
+        self.assertTrue(external.is_external)
+        self.assertEqual(external.university, 'UCSM')
+        self.assertFalse(internal.is_external)
+        self.assertEqual(internal.university, '')
+
+    def test_register_external_player_without_university_returns_400(self):
+        # Arrange
+        members = member_payload(5)
+        members[3]['is_external'] = True
+
+        # Act
+        response = self.client.post(
+            self.url, self.multipart_payload(members)
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('university', response.data['members'][3])
+        self.assertFalse(Registration.objects.exists())
+
+    def test_register_returns_the_join_links(self):
+        # Arrange
+        group = OrganizerContactFactory(
+            tournament=self.tournament, kind='whatsapp_group',
+            value='https://chat.whatsapp.com/abc', registered_only=True,
+        )
+        clan = OrganizerContactFactory(
+            tournament=None, kind='link', name='Clan',
+            value='https://link.clashroyale.com/clan', registered_only=True,
+        )
+        OrganizerContactFactory(tournament=self.tournament)
+        OrganizerContactFactory(
+            tournament=self.tournament, registered_only=True, active=False
+        )
+        OrganizerContactFactory(registered_only=True)
+
+        # Act
+        response = self.client.post(
+            self.url, self.multipart_payload(member_payload(5))
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            [link['id'] for link in response.data['join_links']],
+            [group.pk, clan.pk],
+        )
+        self.assertEqual(
+            response.data['join_links'][0]['link'],
+            'https://chat.whatsapp.com/abc',
+        )
 
     def test_register_without_phone_returns_400(self):
         # Arrange

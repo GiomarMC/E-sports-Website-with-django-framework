@@ -23,7 +23,7 @@ const VALUE_FIELD: Record<ContactKind, { label: string; placeholder: string; hin
   },
   phone: { label: 'Número', placeholder: '987 654 321' },
   email: { label: 'Correo', placeholder: 'organizacion@unsa.edu.pe' },
-  link: { label: 'Link', placeholder: 'https://' },
+  link: { label: 'Link', placeholder: 'https://', hint: 'Clan del juego, servidor de Discord, etc.' },
 }
 
 /** Contacts of the organizers. ``tournamentId`` null = general contacts of
@@ -90,6 +90,7 @@ export function OrganizerContactsPanel({
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{contact.name}</p>
                     <Badge>{contact.kind_display}</Badge>
+                    {contact.registered_only && <Badge>Solo inscritos</Badge>}
                     {!contact.active && <Badge>Oculto</Badge>}
                   </div>
                   <p className="mt-0.5 truncate text-sm text-ink-300">
@@ -160,6 +161,7 @@ function ContactForm({
     role: contact?.role ?? '',
     value: contact?.value ?? '',
     active: contact?.active ?? true,
+    registered_only: contact?.registered_only ?? false,
   })
   const set = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [field]: value }))
   const field = VALUE_FIELD[form.kind]
@@ -237,7 +239,16 @@ function ContactForm({
           </Field>
         </div>
         <label className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] p-4">
-          <span className="text-sm font-medium">Visible en el sitio</span>
+          <span>
+            <span className="block text-sm font-medium">Solo para los inscritos</span>
+            <span className="block text-xs text-ink-400">
+              No aparece en el sitio: se muestra al terminar el formulario de inscripción (grupo de WhatsApp, clan, Discord).
+            </span>
+          </span>
+          <Toggle checked={form.registered_only} onChange={(v) => set('registered_only', v)} label="Solo para los inscritos" />
+        </label>
+        <label className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] p-4">
+          <span className="text-sm font-medium">{form.registered_only ? 'Activo' : 'Visible en el sitio'}</span>
           <Toggle checked={form.active} onChange={(v) => set('active', v)} label="Visible" />
         </label>
         {errors.detail && <p className="text-sm text-accent">{errors.detail}</p>}

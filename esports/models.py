@@ -419,6 +419,9 @@ class RegistrationMember(models.Model):
     game_account_id = models.CharField(max_length=100, blank=True)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
+    # Players from other universities say which one.
+    is_external = models.BooleanField(default=False)
+    university = models.CharField(max_length=150, blank=True)
     is_captain = models.BooleanField(default=False)
 
     class Meta:
@@ -759,6 +762,9 @@ class OrganizerContact(models.Model):
     role = models.CharField(max_length=100, blank=True)
     value = models.CharField(max_length=255)
     active = models.BooleanField(default=True)
+    # Group or clan to join: hidden in the site, shown only to whoever
+    # finishes the registration form.
+    registered_only = models.BooleanField(default=False)
     order = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -767,6 +773,18 @@ class OrganizerContact(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()}: {self.name}"
+
+    @classmethod
+    def join_links(cls, tournament):
+        """Links for the players that just registered in the tournament
+        (its own and the general ones)."""
+        return cls.objects.filter(
+            models.Q(tournament=tournament)
+            | models.Q(tournament__isnull=True),
+            active=True, registered_only=True,
+        ).order_by(
+            models.F('tournament').desc(nulls_last=True), 'order', 'id'
+        )
 
     def clean(self):
         value, error = normalize_contact(self.kind, self.value)

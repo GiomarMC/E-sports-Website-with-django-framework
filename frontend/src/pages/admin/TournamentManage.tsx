@@ -132,7 +132,7 @@ export default function TournamentManage() {
         <OrganizerContactsPanel
           tournamentId={t.id}
           title="Contacto del torneo"
-          description="WhatsApp de los organizadores o link del grupo del torneo. Aparecen en la página del torneo, en el formulario de inscripción y al consultar el estado. Si no agregas ninguno se muestran los contactos generales."
+          description="WhatsApp de los organizadores o link del grupo del torneo. Aparecen en la página del torneo, en el formulario de inscripción y al consultar el estado. Si no agregas ninguno se muestran los contactos generales. Marca «Solo para los inscritos» en el grupo o clan al que deben unirse los jugadores: se les muestra al terminar el formulario."
         />
       )}
       {tab === 'pagos' && (

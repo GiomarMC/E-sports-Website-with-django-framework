@@ -58,6 +58,26 @@ class OrganizerContactViewSetTestCase(APITestCase):
             response.data[0]['link'], 'mailto:esports@unsa.edu.pe'
         )
 
+    def test_public_list_hides_registered_only_links(self):
+        # Arrange
+        OrganizerContactFactory(
+            tournament=self.tournament, registered_only=True
+        )
+        self.client.force_authenticate(self.admin)
+
+        # Act
+        admin = self.client.get(
+            self.list_url, {'tournament': self.tournament.pk}
+        )
+        self.client.force_authenticate(None)
+        public = self.client.get(
+            self.list_url, {'tournament': self.tournament.pk}
+        )
+
+        # Assert
+        self.assertEqual(len(admin.data), 2)
+        self.assertEqual([c['id'] for c in public.data], [self.contact.pk])
+
     def test_public_list_hides_inactive_games(self):
         # Arrange
         hidden = TournamentFactory(game=GameFactory(active=False))

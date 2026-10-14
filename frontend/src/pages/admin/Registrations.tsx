@@ -307,7 +307,12 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
                             {member.nickname}
                           </span>
                         </td>
-                        <td className="px-3 py-2 text-ink-300">{member.full_name}</td>
+                        <td className="px-3 py-2 text-ink-300">
+                          {member.full_name}
+                          {member.is_external && (
+                            <span className="mt-0.5 block text-xs text-warn">Otra universidad: {member.university}</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 font-mono text-ink-300">{member.student_code}</td>
                         <td className="px-3 py-2 text-ink-400">{member.game_account_id || '-'}</td>
                       </tr>

@@ -477,6 +477,9 @@ class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
             'code': registration.code,
             'amount_due': str(registration.amount_due),
             'status': registration.status,
+            'join_links': OrganizerContactSerializer(
+                OrganizerContact.join_links(tournament), many=True
+            ).data,
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['get'])
@@ -1025,7 +1028,7 @@ class OrganizerContactViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
                 Q(tournament__isnull=True)
                 | Q(tournament__game__in=user.managed_games())
             )
-        return contacts.filter(active=True).filter(
+        return contacts.filter(active=True, registered_only=False).filter(
             Q(tournament__isnull=True) | Q(tournament__game__active=True)
         )
 

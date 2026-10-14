@@ -429,9 +429,21 @@ class RegistrationMemberSerializer(serializers.ModelSerializer):
         model = RegistrationMember
         fields = [
             'id', 'full_name', 'student_code', 'nickname',
-            'game_account_id', 'email', 'phone', 'is_captain'
+            'game_account_id', 'email', 'phone', 'is_external',
+            'university', 'is_captain'
             ]
         read_only_fields = ['id']
+
+    def validate(self, data):
+        university = data.get('university', '').strip()
+        if not data.get('is_external'):
+            university = ''
+        elif not university:
+            raise serializers.ValidationError(
+                {'university': 'Escribe la universidad de la que viene.'}
+            )
+        data['university'] = university
+        return data
 
 
 class PublicMemberSerializer(serializers.ModelSerializer):
@@ -996,7 +1008,8 @@ class OrganizerContactSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrganizerContact
         fields = ['id', 'tournament', 'kind', 'kind_display', 'name',
-                  'role', 'value', 'link', 'active', 'order']
+                  'role', 'value', 'link', 'active', 'registered_only',
+                  'order']
 
     def validate(self, data):
         kind = data.get('kind', getattr(self.instance, 'kind', None))

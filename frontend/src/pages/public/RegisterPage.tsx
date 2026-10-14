@@ -13,7 +13,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { TournamentContacts } from '../../components/contacts'
+import { ContactList, TournamentContacts } from '../../components/contacts'
 import { PaymentMethods } from '../../components/payment'
 import { Button, cx, EmptyState, ErrorState, Field, Input, Skeleton } from '../../components/ui'
 import { useToast } from '../../components/Toast'
@@ -31,6 +31,8 @@ interface MemberForm {
   game_account_id: string
   email: string
   phone: string
+  is_external: boolean
+  university: string
 }
 
 let memberKey = 0
@@ -42,6 +44,8 @@ const emptyMember = (): MemberForm => ({
   game_account_id: '',
   email: '',
   phone: '',
+  is_external: false,
+  university: '',
 })
 
 export default function RegisterPage() {
@@ -127,7 +131,7 @@ function RegistrationForm({
       return next
     })
 
-  const update = (index: number, field: keyof MemberForm, value: string) => {
+  const update = <K extends keyof MemberForm>(index: number, field: K, value: MemberForm[K]) => {
     setMembers((current) => current.map((m, i) => (i === index ? { ...m, [field]: value } : m)))
     clearError(`m${index}.${field}`)
   }
@@ -150,6 +154,7 @@ function RegistrationForm({
       if (!member.full_name.trim()) next[`m${index}.full_name`] = 'Requerido'
       if (!member.student_code.trim()) next[`m${index}.student_code`] = 'Requerido'
       if (!member.nickname.trim()) next[`m${index}.nickname`] = 'Requerido'
+      if (member.is_external && !member.university.trim()) next[`m${index}.university`] = 'Escribe su universidad.'
     })
     const codes = members.map((m) => m.student_code.trim().toUpperCase()).filter(Boolean)
     if (new Set(codes).size !== codes.length) next.members = 'Hay códigos de estudiante repetidos.'
@@ -350,6 +355,31 @@ function RegistrationForm({
                         )}
                       </Field>
                     </div>
+                    <div className="mt-4 space-y-3">
+                      <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm text-ink-300">
+                        <input
+                          type="checkbox"
+                          checked={member.is_external}
+                          onChange={(e) => update(index, 'is_external', e.target.checked)}
+                          className="size-4 cursor-pointer accent-accent"
+                        />
+                        {team ? 'Viene de otra universidad' : 'Vengo de otra universidad'}
+                      </label>
+                      {member.is_external && (
+                        <Field label="Universidad" error={errors[`m${index}.university`]}>
+                          {(id) => (
+                            <Input
+                              id={id}
+                              value={member.university}
+                              onChange={(e) => update(index, 'university', e.target.value)}
+                              invalid={!!errors[`m${index}.university`]}
+                              placeholder="Ej. Universidad Católica de Santa María"
+                              maxLength={150}
+                            />
+                          )}
+                        </Field>
+                      )}
+                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -523,6 +553,16 @@ function Success({ result, tournament, name }: { result: RegisterResponse; tourn
           {team && ' o el nickname de cualquier integrante'}.
         </span>
       </p>
+      {result.join_links.length > 0 && (
+        <section className="mt-8 rounded-2xl border border-win/30 bg-win-soft/40 p-5">
+          <h3 className="font-display text-lg font-semibold">Únete ahora</h3>
+          <p className="mb-4 mt-1 text-sm leading-relaxed text-ink-300">
+            {team ? 'Tú y tu equipo deben unirse' : 'Únete'} aquí: por este medio se coordinan las partidas y los avisos.
+            Hazlo ahora, solo se muestra al terminar la inscripción.
+          </p>
+          <ContactList contacts={result.join_links} />
+        </section>
+      )}
       <TournamentContacts
         tournamentId={tournament.id}
         title="Mantente en contacto con los organizadores"
