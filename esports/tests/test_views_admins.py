@@ -226,6 +226,24 @@ class AdminManagementTestCase(APITestCase):
         self.admin.refresh_from_db()
         self.assertTrue(self.admin.check_password('N3w-Password-77'))
 
+    def test_reset_own_password_returns_400(self):
+        # Own password goes through change-password (asks the current one).
+        # Arrange
+        self.client.force_authenticate(user=self.superadmin)
+        url = reverse(
+            'admin-reset-password', kwargs={'pk': self.superadmin.pk}
+        )
+
+        # Act
+        response = self.client.post(
+            url, {'new_password': 'N3w-Password-77'}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.superadmin.refresh_from_db()
+        self.assertFalse(self.superadmin.check_password('N3w-Password-77'))
+
     def test_assign_games_replaces_assignments(self):
         # Arrange
         AdminGameFactory(admin=self.admin)

@@ -3,7 +3,7 @@ import { motion } from 'motion/react'
 import { useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
-import { Button, Field, Input } from '../../components/ui'
+import { Button, Field, Input, PasswordInput } from '../../components/ui'
 import { Logo } from '../../layouts/PublicLayout'
 import type { ApiError } from '../../lib/api'
 
@@ -77,9 +77,8 @@ export default function Login() {
           </Field>
           <Field label="Contraseña">
             {(id) => (
-              <Input
+              <PasswordInput
                 id={id}
-                type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"

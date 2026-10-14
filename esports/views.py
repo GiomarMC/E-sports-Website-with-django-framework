@@ -189,6 +189,11 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
 
         user = self.get_admin(pk)
+        if user.id == request.user.id:
+            # Own password: change-password asks for the current one.
+            raise ValidationError({'detail': (
+                'Para cambiar tu propia contraseña usa Mi cuenta.'
+            )})
         user.set_password(serializer.validated_data['new_password'])
         user.save()
         revoke_tokens(user)

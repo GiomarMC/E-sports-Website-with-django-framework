@@ -1,4 +1,4 @@
-import { CircleNotch, X } from '@phosphor-icons/react'
+import { CircleNotch, Eye, EyeSlash, X } from '@phosphor-icons/react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   useEffect,
@@ -146,6 +146,30 @@ export function Input({ invalid, className, ...props }: InputHTMLAttributes<HTML
       className={cx(inputBase, 'h-11', invalid ? 'border-accent/60' : 'border-white/[0.08]', className)}
       {...props}
     />
+  )
+}
+
+/** Password field with a button to show what was typed (avoids saving a
+ * password with a typo). */
+export function PasswordInput({
+  invalid,
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { invalid?: boolean }) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <div className="relative">
+      <Input {...props} type={visible ? 'text' : 'password'} invalid={invalid} className={cx('pr-11', className)} />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-xl text-ink-400 transition hover:text-ink-100"
+        aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        aria-pressed={visible}
+      >
+        {visible ? <EyeSlash size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
   )
 }
 

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useAuth } from '../../auth/AuthProvider'
-import { Button, Field, Input } from '../../components/ui'
+import { Button, Field, PasswordInput } from '../../components/ui'
 import { PageHeader } from '../../layouts/AdminLayout'
 import { api } from '../../lib/api'
 import { useApiMutation } from '../../lib/queries'
@@ -39,9 +39,8 @@ export default function AccountPage() {
         <h2 className="font-display text-lg font-semibold">Cambiar contraseña</h2>
         <Field label="Contraseña actual" error={errors.old_password}>
           {(id) => (
-            <Input
+            <PasswordInput
               id={id}
-              type="password"
               value={oldPassword}
               onChange={(e) => setOldPassword(e.target.value)}
               autoComplete="current-password"
@@ -50,9 +49,8 @@ export default function AccountPage() {
         </Field>
         <Field label="Contraseña nueva" error={errors.new_password}>
           {(id) => (
-            <Input
+            <PasswordInput
               id={id}
-              type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
@@ -61,9 +59,8 @@ export default function AccountPage() {
         </Field>
         <Field label="Repite la contraseña nueva" error={mismatch ? 'No coincide.' : undefined}>
           {(id) => (
-            <Input
+            <PasswordInput
               id={id}
-              type="password"
               value={repeat}
               onChange={(e) => setRepeat(e.target.value)}
               invalid={mismatch}

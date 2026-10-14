@@ -1,5 +1,6 @@
 import { Check, GameController, Key, Plus, Trash, UsersThree } from '@phosphor-icons/react'
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthProvider'
 import {
   Badge,
@@ -11,6 +12,7 @@ import {
   Field,
   Input,
   Modal,
+  PasswordInput,
   Select,
   Skeleton,
 } from '../../components/ui'
@@ -87,9 +89,18 @@ export default function AdminsPage() {
                     Asignar juegos
                   </Button>
                 )}
-                <Button variant="secondary" size="sm" icon={<Key size={14} />} onClick={() => setResetting(admin)}>
-                  Contraseña
-                </Button>
+                {admin.id === user?.id ? (
+                  // Own password: Mi cuenta asks for the current one and to repeat the new one.
+                  <Link to="/admin/cuenta">
+                    <Button variant="secondary" size="sm" icon={<Key size={14} />}>
+                      Mi contraseña
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button variant="secondary" size="sm" icon={<Key size={14} />} onClick={() => setResetting(admin)}>
+                    Contraseña
+                  </Button>
+                )}
                 {admin.id !== user?.id && (
                   <Button variant="ghost" size="sm" icon={<Trash size={14} />} onClick={() => setDeleting(admin)}>
                     Eliminar
@@ -194,9 +205,8 @@ function AdminForm({ onClose }: { onClose: () => void }) {
         </Field>
         <Field label="Contraseña" error={errors.password} hint="Mínimo 8 caracteres, no solo números.">
           {(id) => (
-            <Input
+            <PasswordInput
               id={id}
-              type="password"
               value={form.password}
               onChange={(e) => set('password', e.target.value)}
               autoComplete="new-password"
@@ -262,11 +272,17 @@ function AssignGames({ admin, onClose }: { admin: AdminUser; onClose: () => void
 
 function ResetPassword({ admin, onClose }: { admin: AdminUser; onClose: () => void }) {
   const [password, setPassword] = useState('')
+  const [repeat, setRepeat] = useState('')
+  const mismatch = repeat !== '' && repeat !== password
   const save = useApiMutation({
     request: () => api(`admin/${admin.id}/reset-password/`, { method: 'POST', body: { new_password: password } }),
     success: 'Contraseña actualizada',
     onSuccess: onClose,
   })
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (password && repeat === password) save.mutate()
+  }
   return (
     <Modal
       open
@@ -277,17 +293,35 @@ function ResetPassword({ admin, onClose }: { admin: AdminUser; onClose: () => vo
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button loading={save.isPending} disabled={!password} onClick={() => save.mutate()}>
+          <Button type="submit" form="reset-password" loading={save.isPending} disabled={!password || repeat !== password}>
             Cambiar contraseña
           </Button>
         </>
       }
     >
-      <Field label="Contraseña nueva" error={save.error?.fields.new_password}>
-        {(id) => (
-          <Input id={id} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-        )}
-      </Field>
+      <form id="reset-password" onSubmit={submit} className="space-y-5">
+        <Field
+          label="Contraseña nueva"
+          error={save.error?.fields.new_password}
+          hint="Al menos 8 caracteres, no solo números. Pásasela a la persona por un medio privado."
+        >
+          {(id) => (
+            <PasswordInput id={id} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          )}
+        </Field>
+        <Field label="Repite la contraseña nueva" error={mismatch ? 'No coincide.' : undefined}>
+          {(id) => (
+            <PasswordInput
+              id={id}
+              value={repeat}
+              onChange={(e) => setRepeat(e.target.value)}
+              invalid={mismatch}
+              autoComplete="new-password"
+            />
+          )}
+        </Field>
+        {save.error && !save.error.fields.new_password && <p className="text-sm text-accent">{save.error.message}</p>}
+      </form>
     </Modal>
   )
 }
