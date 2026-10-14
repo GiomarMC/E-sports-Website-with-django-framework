@@ -77,6 +77,12 @@ Tu dominio queda como `esports-epcc.brazilsouth.cloudapp.azure.com` (la
 región cambia según la que elegiste). También puedes usar DuckDNS o un
 subdominio de la escuela (registro **A** hacia la IP).
 
+**Dominio propio** (p. ej. `esports.subepe.app` en name.com): crea un
+registro **A** con Host `esports` y Answer = IP de la VM. En `.env`:
+`DOMAIN=` el dominio nuevo, `REDIRECT_DOMAINS=` el de Azure (redirige al
+nuevo), agrega ambos a `ALLOWED_HOSTS` y pon el nuevo en
+`CSRF_TRUSTED_ORIGINS`. Luego vuelve a desplegar.
+
 ### Día del evento: más potencia
 
 La B1s gratis aguanta el uso normal. Unos días antes del evento:

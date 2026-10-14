@@ -48,6 +48,9 @@ services:
     restart: unless-stopped
     environment:
       DOMAIN: ${DOMAIN}
+      # Without other domains the block listens on an address that never
+      # matches (plain HTTP, so Caddy asks no certificate for it).
+      REDIRECT_DOMAINS: ${REDIRECT_DOMAINS:-http://redirect.invalid}
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
