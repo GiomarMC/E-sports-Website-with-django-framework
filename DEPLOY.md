@@ -109,7 +109,7 @@ nano .env
 chmod 600 .env
 ```
 
-Completa todo lo que tiene `<...>`: `DOMAIN`, `ACME_EMAIL`, `SECRET_KEY`,
+Completa todo lo que tiene `<...>`: `DOMAIN`, `SECRET_KEY`,
 `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `POSTGRES_PASSWORD` y
 `DEFAULT_SUPERADMIN_PASSWORD` (12+ caracteres, no solo números).
 

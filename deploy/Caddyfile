@@ -1,8 +1,6 @@
 # Caddy gets and renews the HTTPS certificate of {$DOMAIN} on its own
-# (ports 80 and 443 must be open).
-{
-	email {$ACME_EMAIL}
-}
+# (ports 80 and 443 must be open). No email needed: Let's Encrypt no
+# longer sends expiration notices.
 
 {$DOMAIN} {
 	encode zstd gzip

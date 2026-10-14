@@ -8,9 +8,10 @@ REPO_URL="${REPO_URL:-https://github.com/GiomarMC/E-sports-Website-with-django-f
 APP_DIR="${APP_DIR:-/opt/esports}"
 
 echo "==> System updates"
+export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-sudo apt-get install -y ca-certificates curl git iptables-persistent
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git iptables-persistent
 
 echo "==> Swap (small VMs: building the images needs more than 1 GB)"
 if [ ! -f /swapfile ] && [ "$(free -m | awk '/Mem:/ {print $2}')" -lt 4000 ]; then
@@ -55,8 +56,11 @@ fi
 echo "==> Daily backup at 03:30"
 sudo mkdir -p /var/backups/esports
 sudo chown "$USER":"$USER" /var/backups/esports
-( crontab -l 2>/dev/null | grep -v 'deploy/backup.sh'; \
-  echo "30 3 * * * $APP_DIR/deploy/backup.sh >> /var/backups/esports/backup.log 2>&1" ) | crontab -
+# (crontab -l fails when there is no crontab yet.)
+{ crontab -l 2>/dev/null || true; } | { grep -v 'deploy/backup.sh' || true; } > /tmp/esports-cron
+echo "30 3 * * * $APP_DIR/deploy/backup.sh >> /var/backups/esports/backup.log 2>&1" >> /tmp/esports-cron
+crontab /tmp/esports-cron
+rm /tmp/esports-cron
 
 cat <<EOF
 
