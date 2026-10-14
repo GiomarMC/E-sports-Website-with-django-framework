@@ -173,6 +173,78 @@ class AdminGame(models.Model):
         return f"{self.admin.username} - {self.game.name}"
 
 
+class PaymentMethod(models.Model):
+    """Where the players pay the registration of the tournaments of a game
+    (digital payments only). A game can have several methods."""
+    METHOD_CHOICES = (
+        ('yape', 'Yape'),
+        ('plin', 'Plin'),
+        ('bank_transfer', 'Transferencia bancaria'),
+        ('other', 'Otro'),
+    )
+    WALLETS = ('yape', 'plin')
+
+    game = models.ForeignKey(
+        Game, on_delete=models.CASCADE, related_name='payment_methods'
+        )
+    method = models.CharField(max_length=20, choices=METHOD_CHOICES)
+    holder_name = models.CharField(max_length=150)
+    phone_number = models.CharField(max_length=20, blank=True)
+    bank_name = models.CharField(max_length=100, blank=True)
+    account_number = models.CharField(max_length=40, blank=True)
+    cci = models.CharField(max_length=30, blank=True)
+    qr_image = models.ImageField(
+        upload_to='payments/', blank=True,
+        validators=[FileExtensionValidator(IMAGE_EXTENSIONS)]
+        )
+    instructions = models.TextField(blank=True)
+    active = models.BooleanField(default=True)
+    order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['game', 'order', 'id']
+
+    def __str__(self):
+        return f"{self.get_method_display()} - {self.game.name}"
+
+    def clean(self):
+        errors = validate_payment_method(
+            self.method, self.phone_number, self.bank_name,
+            self.account_number, self.instructions,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+
+def validate_payment_method(method, phone_number, bank_name,
+                            account_number, instructions):
+    """Returns a dict of errors (empty when the method is complete)."""
+    errors = {}
+    if method in PaymentMethod.WALLETS:
+        digits = ''.join(ch for ch in phone_number if ch.isdigit())
+        if not digits:
+            errors['phone_number'] = (
+                'Indica el número al que se hace el pago.'
+            )
+        elif len(digits) != 9 or not digits.startswith('9'):
+            errors['phone_number'] = (
+                'El número debe tener 9 dígitos y empezar con 9.'
+            )
+    elif method == 'bank_transfer':
+        if not bank_name.strip():
+            errors['bank_name'] = 'Indica el banco.'
+        if not account_number.strip():
+            errors['account_number'] = 'Indica el número de cuenta.'
+    elif method == 'other':
+        if not (account_number.strip() or phone_number.strip()
+                or instructions.strip()):
+            errors['instructions'] = (
+                'Explica cómo pagar o indica una cuenta o número.'
+            )
+    return errors
+
+
 class Tournament(models.Model):
     STATUS_CHOICES = (
         ('upcoming', 'Upcoming'),

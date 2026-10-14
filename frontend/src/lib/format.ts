@@ -1,5 +1,6 @@
 import type {
   MatchStatus,
+  PaymentMethodType,
   Platform,
   RegistrationStatus,
   StageStatus,
@@ -84,6 +85,19 @@ export const matchStatusLabel: Record<MatchStatus, string> = {
   live: 'En vivo',
   completed: 'Finalizado',
   canceled: 'Cancelado',
+}
+
+export const paymentMethodLabel: Record<PaymentMethodType, string> = {
+  yape: 'Yape',
+  plin: 'Plin',
+  bank_transfer: 'Transferencia bancaria',
+  other: 'Otro',
+}
+
+/** "987654321" -> "987 654 321". */
+export function formatPhone(value: string) {
+  const digits = value.replace(/\D/g, '')
+  return digits.length === 9 ? digits.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') : value
 }
 
 export const platformLabel: Record<Platform, string> = {

@@ -18,7 +18,7 @@ from django.utils import timezone
 
 from esports import services
 from esports.models import (
-    AdminGame, ContactInfo, CustomUser, Game, Registration,
+    AdminGame, ContactInfo, CustomUser, Game, PaymentMethod, Registration,
     RegistrationMember, SiteSettings, Stage, Stream, Tournament,
 )
 
@@ -134,6 +134,7 @@ class Command(BaseCommand):
             if images:
                 self.attach_image(game)
             self.create_admin(game)
+            self.create_payment_methods(game, index)
             tournament = Tournament.objects.create(
                 game=game, name=f"Copa {data['name']} 2026",
                 start_date=timezone.now() + timedelta(days=index - 1),
@@ -164,6 +165,19 @@ class Command(BaseCommand):
                 )
         except OSError as error:
             self.stderr.write(f'Image for {game.name} skipped: {error}')
+
+    def create_payment_methods(self, game, index):
+        # Demo data: fake numbers, nobody should pay to them.
+        PaymentMethod.objects.create(
+            game=game, method='yape', holder_name='Delegación EPCC (demo)',
+            phone_number=f'9000000{index:02d}',
+            instructions='En el mensaje escribe el nombre del equipo.',
+        )
+        PaymentMethod.objects.create(
+            game=game, method='bank_transfer',
+            holder_name='Delegación EPCC (demo)', bank_name='BCP',
+            account_number=f'000-0000000{index}-0-00', order=1,
+        )
 
     def create_admin(self, game):
         username = 'admin_' + game.name.lower().replace(' ', '_')

@@ -20,8 +20,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from esports import services
 from esports.models import (
-    AdminGame, ContactInfo, Game, Match, MediaContent, Registration,
-    SiteSettings, Stage, Stream, Tournament,
+    AdminGame, ContactInfo, Game, Match, MediaContent, PaymentMethod,
+    Registration, SiteSettings, Stage, Stream, Tournament,
 )
 from esports.permissions import (
     IsAdminOrSuperAdmin, IsGameAdmin, IsSuperAdmin, ReadOnlyOrSuperAdmin,
@@ -32,7 +32,8 @@ from esports.serializers import (
     AdminUpdateSerializer, AssignGamesSerializer, ChangePasswordSerializer,
     ContactInfoSerializer, DrawSerializer, GameCreateUpdateSerializer,
     GamePublicSerializer, GroupStandingsSerializer, MatchSerializer,
-    MediaContentSerializer, PublicRegistrationSerializer, RejectSerializer,
+    MediaContentSerializer, PaymentMethodSerializer,
+    PublicRegistrationSerializer, RejectSerializer,
     RegistrationCreateSerializer, RegistrationSerializer,
     RegistrationStatusSerializer, ResetPasswordSerializer, ResultSerializer,
     ScheduleSerializer, SiteSettingsSerializer, StageDetailSerializer,
@@ -303,6 +304,40 @@ class GameViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         game.save(update_fields=['active'])
         return Response({"message": "Juego desactivado."},
                         status=status.HTTP_200_OK)
+
+
+class PaymentMethodViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+    """Payment data of each game, shown in the registration form. Visitors
+    only see the active methods of active games."""
+    serializer_class = PaymentMethodSerializer
+    permission_classes_by_action = {
+        'list': PUBLIC,
+        'retrieve': PUBLIC,
+    }
+    default_permissions = [IsGameAdmin]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_queryset(self):
+        methods = PaymentMethod.objects.select_related('game')
+        game = self.request.query_params.get('game')
+        if game:
+            methods = methods.filter(game_id=game)
+        user = self.request.user
+        if is_admin_user(user):
+            return methods.filter(game__in=user.managed_games())
+        return methods.filter(active=True, game__active=True)
+
+    def perform_create(self, serializer):
+        check_game_permission(
+            self.request.user, serializer.validated_data['game']
+        )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        game = serializer.validated_data.get('game')
+        if game is not None:
+            check_game_permission(self.request.user, game)
+        serializer.save()
 
 
 # ---------------------------------------------------------- tournaments

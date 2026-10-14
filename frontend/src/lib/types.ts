@@ -9,6 +9,7 @@ export type StageStatus = 'pending' | 'ongoing' | 'completed'
 export type MatchStatus = 'scheduled' | 'live' | 'completed' | 'canceled'
 export type Platform = 'twitch' | 'youtube' | 'facebook' | 'kick' | 'tiktok' | 'other'
 export type Role = 'admin' | 'superadmin'
+export type PaymentMethodType = 'yape' | 'plin' | 'bank_transfer' | 'other'
 
 export interface TournamentSummary {
   id: number
@@ -28,6 +29,24 @@ export interface Game {
   images: string | null
   bases: string | null
   tournaments: TournamentSummary[]
+}
+
+/** Where the registration of the tournaments of a game is paid. */
+export interface PaymentMethod {
+  id: number
+  game: number
+  method: PaymentMethodType
+  method_display: string
+  holder_name: string
+  phone_number: string
+  bank_name: string
+  account_number: string
+  /** Interbank account code (bank transfers). */
+  cci: string
+  qr_image: string | null
+  instructions: string
+  active: boolean
+  order: number
 }
 
 export interface StageSummary {

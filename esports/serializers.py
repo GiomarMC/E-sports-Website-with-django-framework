@@ -9,8 +9,9 @@ from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
 from .models import (
     AdminGame, ContactInfo, CustomUser, Game, Match, MatchParticipant,
-    MediaContent, Registration, RegistrationMember, SiteSettings, Stage,
-    StageGroup, Stream, Tournament, validate_team_size,
+    MediaContent, PaymentMethod, Registration, RegistrationMember,
+    SiteSettings, Stage, StageGroup, Stream, Tournament,
+    validate_payment_method, validate_team_size,
 )
 
 
@@ -245,6 +246,53 @@ class GamePublicSerializer(serializers.ModelSerializer):
             'id': t.id,
             'name': t.name,
             'status': t.status} for t in obj.tournaments.all()]
+
+
+class PaymentMethodSerializer(serializers.ModelSerializer):
+    method_display = serializers.CharField(
+        source='get_method_display', read_only=True
+    )
+    # Multipart forms cannot send "no file", so the QR is removed with
+    # this flag.
+    remove_qr = serializers.BooleanField(write_only=True, required=False)
+
+    class Meta:
+        model = PaymentMethod
+        fields = ['id', 'game', 'method', 'method_display', 'holder_name',
+                  'phone_number', 'bank_name', 'account_number', 'cci',
+                  'qr_image', 'remove_qr', 'instructions', 'active',
+                  'order']
+
+    def create(self, validated_data):
+        validated_data.pop('remove_qr', None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if validated_data.pop('remove_qr', False) \
+                and 'qr_image' not in validated_data:
+            instance.qr_image.delete(save=False)
+        return super().update(instance, validated_data)
+
+    def validate_qr_image(self, value):
+        if value and not value.name.lower().endswith((
+                '.png', '.jpg', '.jpeg', '.webp')):
+            raise serializers.ValidationError(
+                "El QR debe ser PNG, JPG, JPEG o WEBP."
+                )
+        return validate_file_size(value)
+
+    def validate(self, data):
+        def current(field):
+            return data.get(field, getattr(self.instance, field, ''))
+
+        errors = validate_payment_method(
+            current('method'), current('phone_number'),
+            current('bank_name'), current('account_number'),
+            current('instructions'),
+        )
+        if errors:
+            raise serializers.ValidationError(errors)
+        return data
 
 
 # ---------------------------------------------------------- tournaments

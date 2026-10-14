@@ -9,6 +9,7 @@ import type {
   Game,
   GroupStandings,
   Match,
+  PaymentMethod,
   PublicRegistration,
   Quote,
   Registration,
@@ -50,6 +51,7 @@ export const keys = {
   admins: ['admins'] as const,
   me: ['me'] as const,
   contacts: ['contacts'] as const,
+  paymentMethods: (game: number) => ['payment-methods', game] as const,
 }
 
 interface QueryConfig {
@@ -105,6 +107,9 @@ export const useBracket = (id: number) =>
 export const useMatches = (params?: Params) => useApiQuery<Match[]>(keys.matches(params), 'matches/', { params, ...LIVE })
 
 export const useStreams = (params?: Params) => useApiQuery<Stream[]>(keys.streams(params), 'streams/', { params, ...LIVE })
+
+export const usePaymentMethods = (game: number) =>
+  useApiQuery<PaymentMethod[]>(keys.paymentMethods(game), 'payment-methods/', { params: { game }, enabled: game > 0 })
 
 export const useContacts = () => useApiQuery<ContactInfo[]>(keys.contacts, 'contacts/')
 

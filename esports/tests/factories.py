@@ -9,8 +9,8 @@ from faker import Faker
 from PIL import Image
 
 from esports.models import (
-    AdminGame, CustomUser, Game, Registration, RegistrationMember,
-    SiteSettings, Stage, Stream, Tournament,
+    AdminGame, CustomUser, Game, PaymentMethod, Registration,
+    RegistrationMember, SiteSettings, Stage, Stream, Tournament,
 )
 
 
@@ -80,6 +80,16 @@ class AdminGameFactory(factory.django.DjangoModelFactory):
 
     admin = factory.SubFactory(AdminUserFactory)
     game = factory.SubFactory(GameFactory)
+
+
+class PaymentMethodFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = PaymentMethod
+
+    game = factory.SubFactory(GameFactory)
+    method = 'yape'
+    holder_name = factory.LazyFunction(lambda: fake.name())
+    phone_number = factory.Sequence(lambda n: f"9{n:08d}")
 
 
 class SiteSettingsFactory(factory.django.DjangoModelFactory):

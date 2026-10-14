@@ -7,6 +7,7 @@ import {
   FilePdf,
   MagnifyingGlass,
   Trash,
+  Wallet,
   XCircle,
 } from '@phosphor-icons/react'
 import { useState } from 'react'
@@ -22,24 +23,66 @@ import {
   Modal,
   Select,
   Skeleton,
+  Tabs,
   Textarea,
   TeamLogo,
 } from '../../components/ui'
+import { useAuth } from '../../auth/AuthProvider'
 import { PageHeader } from '../../layouts/AdminLayout'
 import { api } from '../../lib/api'
 import { formatDate, formatMoney, registrationStatusLabel } from '../../lib/format'
-import { useApiMutation, useRegistrations, useTournaments } from '../../lib/queries'
+import { useApiMutation, useGames, useRegistrations, useTournaments } from '../../lib/queries'
+import { PaymentMethodsPanel } from './PaymentMethods'
 import type { Registration, RegistrationStatus } from '../../lib/types'
 
 export default function RegistrationsPage() {
+  const [tab, setTab] = useState<'inscripciones' | 'pagos'>('inscripciones')
   return (
     <>
       <PageHeader
         title="Inscripciones"
         description="Revisa el comprobante de pago de cada inscripción y confírmala o recházala. Las inscripciones no se pueden editar."
       />
-      <RegistrationsPanel />
+      <div className="mb-6">
+        <Tabs
+          layoutId="registrations-tabs"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { value: 'inscripciones', label: 'Inscripciones', icon: <ClipboardText size={16} /> },
+            { value: 'pagos', label: 'Métodos de pago', icon: <Wallet size={16} /> },
+          ]}
+        />
+      </div>
+      {tab === 'inscripciones' ? <RegistrationsPanel /> : <PaymentsByGame />}
     </>
+  )
+}
+
+/** Payment methods of the games the admin manages (one game at a time). */
+function PaymentsByGame() {
+  const { canManage } = useAuth()
+  const games = useGames()
+  const managed = (games.data ?? []).filter((g) => canManage(g.id))
+  const [selected, setSelected] = useState<number | null>(null)
+  const game = managed.find((g) => g.id === selected) ?? managed[0]
+  if (games.isPending) return <Skeleton className="h-48" />
+  if (!game) {
+    return <EmptyState icon={<Wallet size={24} />} title="Sin juegos asignados" description="Pide a un superadmin que te asigne un juego." />
+  }
+  return (
+    <div className="space-y-6">
+      {managed.length > 1 && (
+        <Select value={game.id} onChange={(e) => setSelected(Number(e.target.value))} className="max-w-xs" aria-label="Juego">
+          {managed.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </Select>
+      )}
+      <PaymentMethodsPanel key={game.id} gameId={game.id} gameName={game.name} paid={false} />
+    </div>
   )
 }
 

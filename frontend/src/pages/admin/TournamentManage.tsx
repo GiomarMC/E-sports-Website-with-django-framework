@@ -7,6 +7,7 @@ import {
   CheckCircle,
   CircleNotch,
   ClipboardText,
+  Wallet,
   ListBullets,
   ListNumbers,
   Crown,
@@ -64,10 +65,11 @@ import {
 } from '../../lib/queries'
 import type { DrawResult, Match, Stage, StageType, Tournament } from '../../lib/types'
 import { FormatWizard } from './FormatWizard'
+import { PaymentMethodsPanel } from './PaymentMethods'
 import { RegistrationsPanel } from './Registrations'
 import { RegistrationSwitch, TournamentForm } from './Tournaments'
 
-type Tab = 'fases' | 'inscripciones'
+type Tab = 'fases' | 'inscripciones' | 'pagos'
 
 export default function TournamentManage() {
   const tournamentId = Number(useParams().tournamentId)
@@ -116,11 +118,16 @@ export default function TournamentManage() {
           tabs={[
             { value: 'fases', label: 'Fases y matchs', icon: <TreeStructure size={16} /> },
             { value: 'inscripciones', label: 'Inscripciones', icon: <ClipboardText size={16} /> },
+            { value: 'pagos', label: 'Métodos de pago', icon: <Wallet size={16} /> },
           ]}
         />
       </div>
 
-      {tab === 'fases' ? <StagesManager tournament={t} /> : <RegistrationsPanel tournamentId={t.id} />}
+      {tab === 'fases' && <StagesManager tournament={t} />}
+      {tab === 'inscripciones' && <RegistrationsPanel tournamentId={t.id} />}
+      {tab === 'pagos' && (
+        <PaymentMethodsPanel gameId={t.game} gameName={t.game_name} paid={Number(t.fee_per_player) > 0} />
+      )}
       {editing && <TournamentForm tournament={t} onClose={() => setEditing(false)} />}
     </>
   )

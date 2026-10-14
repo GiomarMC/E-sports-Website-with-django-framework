@@ -13,6 +13,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { PaymentMethods } from '../../components/payment'
 import { Button, cx, EmptyState, ErrorState, Field, Input, Skeleton } from '../../components/ui'
 import { useToast } from '../../components/Toast'
 import { api, ApiError, toFormData } from '../../lib/api'
@@ -415,7 +416,11 @@ function RegistrationForm({ tournament, onDone }: { tournament: Tournament; onDo
             </div>
           </dl>
           {needsVoucher && (
-            <div className="px-6 pb-6">
+            <div className="space-y-5 border-t border-white/[0.06] px-6 py-5">
+              <div>
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-ink-400">Cómo pagar</h3>
+                <PaymentMethods gameId={tournament.game} amount={total} currency={tournament.currency} />
+              </div>
               <Field label="Comprobante de pago" error={errors.voucher} hint="Imagen o PDF del voucher (máx. 5 MB).">
                 {(id) => (
                   <label
