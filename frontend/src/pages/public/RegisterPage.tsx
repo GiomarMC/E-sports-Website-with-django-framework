@@ -141,6 +141,10 @@ function RegistrationForm({
     const next: Record<string, string> = {}
     if (team && !teamName.trim()) next.team_name = 'Escribe el nombre del equipo.'
     if (!email.trim()) next.contact_email = 'Necesitamos un correo de contacto.'
+    const digits = phone.replace(/\D/g, '')
+    if (!digits) next.contact_phone = team ? 'Escribe el celular del capitán.' : 'Escribe tu celular.'
+    else if (!(digits.length === 9 && digits.startsWith('9')) && !(digits.length === 11 && digits.startsWith('519')) && !phone.trim().startsWith('+'))
+      next.contact_phone = 'El celular debe tener 9 dígitos y empezar con 9.'
     if (needsVoucher && !voucher) next.voucher = 'Sube el comprobante de pago.'
     members.forEach((member, index) => {
       if (!member.full_name.trim()) next[`m${index}.full_name`] = 'Requerido'
@@ -370,7 +374,7 @@ function RegistrationForm({
             <Field
               label="Correo"
               error={errors.contact_email}
-              hint="Por aquí te contactarán los organizadores."
+              hint="Para avisos que necesiten más detalle."
             >
               {(id) => (
                 <Input
@@ -386,9 +390,26 @@ function RegistrationForm({
                 />
               )}
             </Field>
-            <Field label="Celular (opcional)" error={errors.contact_phone}>
+            <Field
+              label={team ? 'Celular del capitán' : 'Celular'}
+              error={errors.contact_phone}
+              hint="De preferencia con WhatsApp: los organizadores avisarán por aquí."
+            >
               {(id) => (
-                <Input id={id} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
+                <Input
+                  id={id}
+                  type="tel"
+                  inputMode="tel"
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value)
+                    clearError('contact_phone')
+                  }}
+                  invalid={!!errors.contact_phone}
+                  placeholder="987 654 321"
+                  autoComplete="tel"
+                  maxLength={20}
+                />
               )}
             </Field>
           </div>

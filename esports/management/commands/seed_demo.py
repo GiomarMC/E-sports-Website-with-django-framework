@@ -213,6 +213,7 @@ class Command(BaseCommand):
             tournament=tournament,
             team_name=name if team else '',
             contact_email=f'{random.randint(10000, 99999)}@unsa.edu.pe',
+            contact_phone=f'9{random.randint(10**7, 10**8 - 1)}',
             amount_due=tournament.calculate_fee(players),
             status=status,
         )

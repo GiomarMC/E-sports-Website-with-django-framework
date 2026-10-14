@@ -411,6 +411,10 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
     members = JSONListField(
         child=RegistrationMemberSerializer(), allow_empty=False
         )
+    contact_phone = serializers.CharField(
+        max_length=20, allow_blank=True,
+        error_messages={'required': 'Escribe el celular del capitán.'},
+    )
 
     class Meta:
         model = Registration
@@ -424,6 +428,17 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
 
     def validate_voucher(self, value):
         return validate_file_size(value)
+
+    def validate_contact_phone(self, value):
+        # Required: the organizers reach the captain by phone / WhatsApp
+        # (the email is rarely read).
+        value, error = normalize_contact('phone', value)
+        if error:
+            raise serializers.ValidationError(
+                'Escribe el celular del capitán (9 dígitos).'
+                if not value else error
+            )
+        return value
 
     def validate(self, data):
         tournament = self.context['tournament']

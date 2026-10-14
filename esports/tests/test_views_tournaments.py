@@ -235,6 +235,7 @@ class TournamentRegisterTestCase(APITestCase):
         payload = {
             'team_name': 'Los Pumas',
             'contact_email': 'captain@unsa.edu.pe',
+            'contact_phone': '987654321',
             'members': json.dumps(members),
             'voucher': image_file('voucher.png'),
         }
@@ -396,6 +397,7 @@ class TournamentRegisterTestCase(APITestCase):
         url = reverse('tournaments-register', kwargs={'pk': tournament.pk})
         payload = {
             'contact_email': 'player@unsa.edu.pe',
+            'contact_phone': '+51 912 345 678',
             'members': member_payload(1, captain_index=None),
         }
 
@@ -407,3 +409,33 @@ class TournamentRegisterTestCase(APITestCase):
         registration = Registration.objects.get(code=response.data['code'])
         self.assertEqual(registration.team_name, '')
         self.assertTrue(registration.members.get().is_captain)
+        self.assertEqual(registration.contact_phone, '912345678')
+
+    def test_register_without_phone_returns_400(self):
+        # Arrange
+        payload = self.multipart_payload(member_payload(5))
+        del payload['contact_phone']
+
+        # Act
+        missing = self.client.post(self.url, payload)
+        blank = self.client.post(
+            self.url,
+            self.multipart_payload(member_payload(5), contact_phone=''),
+        )
+
+        # Assert
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('contact_phone', missing.data)
+        self.assertEqual(blank.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('contact_phone', blank.data)
+
+    def test_register_with_invalid_phone_returns_400(self):
+        # Act
+        response = self.client.post(
+            self.url,
+            self.multipart_payload(member_payload(5), contact_phone='12345'),
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('contact_phone', response.data)
