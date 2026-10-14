@@ -285,6 +285,14 @@ SWAGGER_SETTINGS = {
     },
 }
 
+# Errors and warnings go to the container output (docker compose logs).
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+}
+
 # Shared by the processes of the server (the request limits are counted
 # here).
 CACHES = {

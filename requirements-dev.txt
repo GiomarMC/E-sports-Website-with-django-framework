@@ -1,0 +1,7 @@
+# Tests and lint (CI). Runtime dependencies are in requirements.txt.
+-r requirements.txt
+coverage==7.16.2
+factory_boy==3.3.3
+Faker==40.43.0
+flake8==7.4.1
+freezegun==1.5.5

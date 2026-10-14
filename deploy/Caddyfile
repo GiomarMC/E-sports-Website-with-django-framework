@@ -1,0 +1,49 @@
+# Caddy gets and renews the HTTPS certificate of {$DOMAIN} on its own
+# (ports 80 and 443 must be open).
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Django API. Uploads (vouchers, logos, bases) up to 10 MB.
+	handle /api/* {
+		request_body {
+			max_size 10MB
+		}
+		reverse_proxy backend:8000
+	}
+
+	# Files uploaded by the admins and the players (logos, images, PDFs,
+	# QR). The payment vouchers are NOT here: Django serves them.
+	handle_path /media/* {
+		root * /srv/media
+		header X-Content-Type-Options "nosniff"
+		file_server
+	}
+
+	handle_path /static/* {
+		root * /srv/static
+		file_server
+	}
+
+	# Frontend (React). Unknown paths go to index.html (client routes).
+	handle {
+		root * /srv/frontend
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src https://player.twitch.tv https://player.kick.com https://www.youtube.com https://www.facebook.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} /index.html
+		file_server
+	}
+}

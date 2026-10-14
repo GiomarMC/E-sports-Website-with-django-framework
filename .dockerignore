@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.cache
+.env
+.env.*
+!.env.example
+db.sqlite3
+media
+private_media
+staticfiles
+*.egg-info
+__pycache__
+*.pyc
+frontend/node_modules
+frontend/dist

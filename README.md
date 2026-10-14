@@ -145,6 +145,9 @@ development only: the command refuses to run with `DEBUG=False`.
 
 ## Deployment
 
+Step by step guide (Oracle Cloud Always Free, Docker Compose, Caddy and
+GitHub Actions): [DEPLOY.md](DEPLOY.md).
+
 Checklist (`python manage.py check --deploy` must only warn about the HSTS
 subdomains / preload options):
 

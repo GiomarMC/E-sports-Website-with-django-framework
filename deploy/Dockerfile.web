@@ -1,0 +1,16 @@
+# Web server: builds the frontend and serves it with Caddy, which also gets
+# the HTTPS certificate (Let's Encrypt) and proxies /api to Django.
+FROM node:24-slim AS frontend
+
+WORKDIR /frontend
+# pnpm 11 through corepack (version from package.json "packageManager").
+RUN corepack enable
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY frontend/ ./
+RUN pnpm build
+
+FROM caddy:2.11-alpine
+
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=frontend /frontend/dist /srv/frontend
