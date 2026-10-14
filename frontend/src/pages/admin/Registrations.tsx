@@ -229,7 +229,7 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
 
   if (!registration) return <Modal open={false} onClose={onClose} title="">{null}</Modal>
 
-  const voucherIsPdf = registration.voucher?.toLowerCase().endsWith('.pdf')
+  const voucherIsPdf = registration.voucher_is_pdf
 
   return (
     <>

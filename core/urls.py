@@ -28,10 +28,17 @@ urlpatterns = [
     path('api/token/refresh/',
          TokenRefreshView.as_view(),
          name='token_refresh'),
-    path('api/docs/',
-         schema_view.with_ui('swagger', cache_timeout=0),
-         name='api-docs'),
-    path('api/redoc/',
-         schema_view.with_ui('redoc', cache_timeout=0),
-         name='api-redoc'),
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+]
+
+if settings.API_DOCS:
+    urlpatterns += [
+        path('api/docs/',
+             schema_view.with_ui('swagger', cache_timeout=0),
+             name='api-docs'),
+        path('api/redoc/',
+             schema_view.with_ui('redoc', cache_timeout=0),
+             name='api-redoc'),
+    ]
+
+# Only with DEBUG: in production the web server serves MEDIA_ROOT.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

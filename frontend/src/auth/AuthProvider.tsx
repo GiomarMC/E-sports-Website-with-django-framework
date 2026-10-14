@@ -51,6 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(() => {
+    // Revoke the refresh token on the server; the local session ends anyway.
+    const tokens = loadTokens()
+    if (tokens) api('admin/logout/', { method: 'POST', body: { refresh: tokens.refresh }, auth: false }).catch(() => {})
     saveTokens(null)
     queryClient.clear()
   }, [queryClient])

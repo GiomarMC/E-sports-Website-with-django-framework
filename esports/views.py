@@ -1,10 +1,13 @@
+import mimetypes
 import uuid
 from collections import defaultdict
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core import signing
 from django.db import transaction
 from django.db.models import Q
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -16,6 +19,10 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.token_blacklist.models import (
+    BlacklistedToken, OutstandingToken,
+)
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from esports import services
@@ -39,6 +46,7 @@ from esports.serializers import (
     RegistrationCreateSerializer, RegistrationLookupSerializer,
     RegistrationSerializer,
     RegistrationStatusSerializer, ResetPasswordSerializer, ResultSerializer,
+    VOUCHER_LINK_SECONDS, VOUCHER_SALT,
     ScheduleSerializer, SiteSettingsSerializer, StageDetailSerializer,
     StageSerializer, StreamSerializer, TournamentSerializer,
 )
@@ -55,6 +63,8 @@ class ActionPermissionMixin:
     """
     permission_classes_by_action = {}
     default_permissions = [IsAdminOrSuperAdmin]
+    # Set per action (``@action(throttle_scope=...)``) to limit requests.
+    throttle_scope = None
 
     def get_permissions(self):
         permissions = self.permission_classes_by_action.get(
@@ -86,9 +96,20 @@ def query_flag(request, name):
 
 # --------------------------------------------------------------- admins
 
+def revoke_tokens(user):
+    """Logs the user out of every device (after a password change): their
+    refresh tokens stop working and the access token expires on its own."""
+    BlacklistedToken.objects.bulk_create(
+        [BlacklistedToken(token=token) for token in
+         OutstandingToken.objects.filter(user=user, blacklistedtoken=None)],
+        ignore_conflicts=True,
+    )
+
+
 class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
     permission_classes_by_action = {
         'login': PUBLIC,
+        'logout': PUBLIC,
         'me': [IsAdminOrSuperAdmin],
         'change_password': [IsAdminOrSuperAdmin],
         'reset_password': [IsSuperAdmin],
@@ -106,7 +127,8 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         )
 
     @swagger_auto_schema(request_body=AdminLoginSerializer)
-    @action(detail=False, methods=['post'], url_path='login')
+    @action(detail=False, methods=['post'], url_path='login',
+            throttle_scope='login')
     def login(self, request):
         serializer = AdminLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -119,6 +141,19 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
             'access': str(refresh.access_token),
             'admin': AdminListSerializer(user).data,
         }, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={'refresh': openapi.Schema(type=openapi.TYPE_STRING)},
+    ))
+    @action(detail=False, methods=['post'], url_path='logout')
+    def logout(self, request):
+        """Blacklists the refresh token so it cannot be used again."""
+        try:
+            RefreshToken(request.data.get('refresh', '')).blacklist()
+        except TokenError:
+            pass  # Already expired or invalid: nothing to revoke.
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['get'], url_path='me')
     def me(self, request):
@@ -141,6 +176,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
 
         user.set_password(new_password)
         user.save()
+        revoke_tokens(user)
 
         return Response({
             "message": "Contraseña actualizada."
@@ -155,6 +191,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         user = self.get_admin(pk)
         user.set_password(serializer.validated_data['new_password'])
         user.save()
+        revoke_tokens(user)
 
         return Response({
             "message": "Contraseña restablecida."
@@ -416,7 +453,8 @@ class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
     @swagger_auto_schema(request_body=RegistrationCreateSerializer)
     @action(
         detail=True, methods=['post'],
-        parser_classes=[MultiPartParser, FormParser, JSONParser]
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+        throttle_scope='register',
     )
     def register(self, request, pk=None):
         """Public registration form. Multipart: send ``members`` as a JSON
@@ -487,7 +525,11 @@ class RegistrationViewSet(ActionPermissionMixin,
     with ``POST /tournaments/{id}/register/`` and cannot be edited later."""
     serializer_class = RegistrationSerializer
     default_permissions = [IsGameAdmin]
-    permission_classes_by_action = {'check_status': PUBLIC, 'lookup': PUBLIC}
+    # ``voucher`` is checked with the signed link of the admin serializer:
+    # images and PDFs are opened by the browser, without the JWT header.
+    permission_classes_by_action = {
+        'check_status': PUBLIC, 'lookup': PUBLIC, 'voucher': PUBLIC,
+    }
     LOOKUP_MIN_LENGTH = 3
     LOOKUP_LIMIT = 20
     # Registrations are final once sent: only PATCH (seed / is_active).
@@ -529,7 +571,7 @@ class RegistrationViewSet(ActionPermissionMixin,
 
     @action(
         detail=False, methods=['get'],
-        url_path=r'status/(?P<code>[0-9a-fA-F-]+)'
+        url_path=r'status/(?P<code>[0-9a-fA-F-]+)', throttle_scope='lookup'
     )
     def check_status(self, request, code=None):
         """Public: status of a registration by its code."""
@@ -546,7 +588,8 @@ class RegistrationViewSet(ActionPermissionMixin,
         'q', openapi.IN_QUERY, type=openapi.TYPE_STRING,
         description='Nombre del equipo o nickname (mínimo 3 letras).',
     )])
-    @action(detail=False, methods=['get'], url_path='lookup')
+    @action(detail=False, methods=['get'], url_path='lookup',
+            throttle_scope='lookup')
     def lookup(self, request):
         """Public: status of the registrations by team name or player
         nickname. Several teams can share a nickname, so every match is
@@ -580,6 +623,40 @@ class RegistrationViewSet(ActionPermissionMixin,
             ).data,
             'truncated': len(registrations) > self.LOOKUP_LIMIT,
         })
+
+    @swagger_auto_schema(auto_schema=None)
+    @action(detail=True, methods=['get'])
+    def voucher(self, request, pk=None):
+        """Private voucher file, served only with a valid signed link."""
+        try:
+            signed_pk = signing.loads(
+                request.query_params.get('t', ''), salt=VOUCHER_SALT,
+                max_age=VOUCHER_LINK_SECONDS,
+            )
+        except signing.SignatureExpired:
+            raise PermissionDenied(
+                'El enlace del comprobante expiró: vuelve a abrir la '
+                'inscripción.'
+            )
+        except signing.BadSignature:
+            raise PermissionDenied('El enlace del comprobante no es válido.')
+        if str(signed_pk) != str(pk):
+            raise PermissionDenied('El enlace del comprobante no es válido.')
+        registration = get_object_or_404(Registration, pk=pk)
+        if not registration.voucher:
+            raise Http404
+        try:
+            file = registration.voucher.open('rb')
+        except FileNotFoundError:
+            raise Http404
+        content_type = (
+            mimetypes.guess_type(registration.voucher.name)[0]
+            or 'application/octet-stream'
+        )
+        response = FileResponse(file, content_type=content_type)
+        response['Cache-Control'] = 'private, no-store'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
 
     def review(self, registration, new_status, reason=''):
         registration.status = new_status

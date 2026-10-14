@@ -120,7 +120,9 @@ export interface Registration {
   display_name: string
   team_name: string
   logo: string | null
+  /** Signed link that expires after an hour (the file is private). */
   voucher: string | null
+  voucher_is_pdf: boolean
   contact_email: string
   contact_phone: string
   amount_due: string

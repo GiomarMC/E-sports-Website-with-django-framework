@@ -1,8 +1,11 @@
+import os
 import uuid
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
+from django.core.files.storage import FileSystemStorage
 from django.core.validators import (
     FileExtensionValidator, MinValueValidator, URLValidator, validate_email,
 )
@@ -12,6 +15,34 @@ from django.utils import timezone
 
 IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
 VOUCHER_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png']
+MEDIA_CONTENT_EXTENSIONS = IMAGE_EXTENSIONS + ['mp4', 'webm']
+
+
+class PrivateStorage(FileSystemStorage):
+    """Storage outside MEDIA_ROOT: its files have no public URL and are
+    only served through the API (payment vouchers). The folder is read
+    from the settings on every use, so tests can override it."""
+
+    @property
+    def base_location(self):
+        return str(settings.PRIVATE_MEDIA_ROOT)
+
+    @property
+    def location(self):
+        return os.path.abspath(self.base_location)
+
+
+_private_storage = PrivateStorage()
+
+
+def private_storage():
+    return _private_storage
+
+
+def voucher_path(instance, filename):
+    # Random name: the original one (team name, phone...) is not kept.
+    extension = os.path.splitext(filename)[1].lower()
+    return f'vouchers/{uuid.uuid4().hex}{extension}'
 
 
 class CustomUser(AbstractUser):
@@ -332,7 +363,7 @@ class Registration(models.Model):
         validators=[FileExtensionValidator(IMAGE_EXTENSIONS)]
         )
     voucher = models.FileField(
-        upload_to='vouchers/', blank=True,
+        upload_to=voucher_path, storage=private_storage, blank=True,
         validators=[FileExtensionValidator(VOUCHER_EXTENSIONS)]
         )
     contact_email = models.EmailField()
@@ -681,7 +712,10 @@ class MediaContent(models.Model):
         ('video', 'Video')
     )
     title = models.CharField(max_length=100)
-    file = models.FileField(upload_to='media_content/')
+    file = models.FileField(
+        upload_to='media_content/',
+        validators=[FileExtensionValidator(MEDIA_CONTENT_EXTENSIONS)]
+        )
     type = models.CharField(max_length=10, choices=MEDIA_TYPES)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 

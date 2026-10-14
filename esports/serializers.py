@@ -3,7 +3,10 @@ import json
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
+from django.core import signing
 from django.db import transaction
+from django.urls import reverse
+from PIL import Image
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
@@ -22,6 +25,50 @@ def validate_file_size(value):
             f"El archivo no puede pesar más de {limit} MB."
             )
     return value
+
+
+def validate_file_content(value):
+    """The extension is not enough: checks that a PDF really is a PDF and
+    an image really is an image (a renamed HTML or script is rejected)."""
+    if not value:
+        return value
+    if value.name.lower().endswith('.pdf'):
+        value.seek(0)
+        valid = value.read(5) == b'%PDF-'
+        value.seek(0)
+        if not valid:
+            raise serializers.ValidationError(
+                "El archivo no es un PDF válido."
+                )
+        return value
+    try:
+        value.seek(0)
+        with Image.open(value) as image:
+            image.verify()
+            valid = image.format in ('JPEG', 'PNG', 'WEBP')
+    except Exception:
+        valid = False
+    value.seek(0)
+    if not valid:
+        raise serializers.ValidationError(
+            "El archivo no es una imagen válida (JPG, PNG o WEBP)."
+            )
+    return value
+
+
+VOUCHER_SALT = 'esports.voucher'
+# Lifetime of the signed voucher links given to the admins.
+VOUCHER_LINK_SECONDS = 60 * 60
+
+
+def voucher_url(registration):
+    """Vouchers are private files: the admins get a signed link that
+    expires instead of a public URL."""
+    if not registration.voucher:
+        return None
+    token = signing.dumps(registration.pk, salt=VOUCHER_SALT)
+    path = reverse('registrations-voucher', args=[registration.pk])
+    return f'{path}?t={token}'
 
 
 # --------------------------------------------------------------- admins
@@ -181,7 +228,7 @@ class GameCreateUpdateSerializer(serializers.ModelSerializer):
     def validate_bases(self, value):
         if value and not value.name.lower().endswith('.pdf'):
             raise serializers.ValidationError("Las bases deben ser un PDF.")
-        return validate_file_size(value)
+        return validate_file_content(validate_file_size(value))
 
     def validate_images(self, value):
         if value and not value.name.lower().endswith((
@@ -413,7 +460,7 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         return validate_file_size(value)
 
     def validate_voucher(self, value):
-        return validate_file_size(value)
+        return validate_file_content(validate_file_size(value))
 
     def validate_contact_phone(self, value):
         # Required: the organizers reach the captain by phone / WhatsApp
@@ -505,13 +552,16 @@ class RegistrationSerializer(serializers.ModelSerializer):
         source='tournament.name', read_only=True
         )
     reviewed_by = serializers.StringRelatedField()
+    voucher = serializers.SerializerMethodField()
+    voucher_is_pdf = serializers.SerializerMethodField()
 
     class Meta:
         model = Registration
         fields = [
             'id', 'tournament', 'tournament_name', 'display_name',
-            'team_name', 'logo', 'voucher', 'contact_email',
-            'contact_phone', 'amount_due', 'status', 'rejection_reason',
+            'team_name', 'logo', 'voucher', 'voucher_is_pdf',
+            'contact_email', 'contact_phone', 'amount_due', 'status',
+            'rejection_reason',
             'is_active', 'seed', 'code', 'created_at', 'reviewed_at',
             'reviewed_by', 'members'
             ]
@@ -521,6 +571,13 @@ class RegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = [
             f for f in fields if f not in ['seed', 'is_active']
             ]
+
+    def get_voucher(self, obj):
+        # Relative: the same origin serves the API and the frontend.
+        return voucher_url(obj)
+
+    def get_voucher_is_pdf(self, obj):
+        return obj.voucher.name.lower().endswith('.pdf')
 
 
 class RegistrationStatusSerializer(serializers.ModelSerializer):
@@ -919,6 +976,9 @@ class MediaContentSerializer(serializers.ModelSerializer):
     class Meta:
         model = MediaContent
         fields = ['id', 'title', 'file', 'type', 'uploaded_at']
+
+    def validate_file(self, value):
+        return validate_file_size(value)
 
 
 class ContactInfoSerializer(serializers.ModelSerializer):

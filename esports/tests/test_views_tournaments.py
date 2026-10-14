@@ -213,7 +213,9 @@ class TournamentViewSetTestCase(APITestCase):
         self.assertNotIn('contact_email', response.data[0])
 
 
-@override_settings(MEDIA_ROOT=MEDIA_ROOT)
+@override_settings(
+    MEDIA_ROOT=MEDIA_ROOT, PRIVATE_MEDIA_ROOT=f'{MEDIA_ROOT}/private'
+)
 class TournamentRegisterTestCase(APITestCase):
 
     @classmethod

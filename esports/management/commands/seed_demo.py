@@ -11,6 +11,7 @@ import urllib.request
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -93,6 +94,9 @@ class Command(BaseCommand):
                             help='Delete existing games first.')
 
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            # It creates admins with a known password: never in production.
+            raise CommandError('seed_demo only runs with DEBUG=True.')
         if Game.objects.exists() and not options['reset']:
             raise CommandError(
                 'There are games already. Use --reset to replace them.'

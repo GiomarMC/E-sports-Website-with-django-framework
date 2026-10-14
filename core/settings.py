@@ -16,6 +16,7 @@ from datetime import timedelta
 from pathlib import Path
 import environ
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -35,7 +36,8 @@ env = environ.Env(
 
 env_file = os.path.join(BASE_DIR, '.env')
 if os.path.isfile(env_file):
-    env.read_env(env_file, override=True)
+    # Real environment variables (server, docker) win over the .env file.
+    env.read_env(env_file, override=False)
 
 
 # Quick-start development settings - unsuitable for production
@@ -48,6 +50,19 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
+
+TESTING = len(sys.argv) > 1 and sys.argv[1] == 'test'
+
+if not DEBUG and not TESTING:
+    # Fail fast instead of running production with unsafe defaults.
+    if len(SECRET_KEY) < 50 or SECRET_KEY.startswith('change-me'):
+        raise ImproperlyConfigured(
+            'SECRET_KEY must be a random value of 50+ characters. Generate '
+            'one with: python -c "from django.core.management.utils import '
+            'get_random_secret_key; print(get_random_secret_key())"'
+        )
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured('ALLOWED_HOSTS is empty.')
 
 CUSTOM_APPS = [
     'esports',
@@ -68,6 +83,7 @@ INSTALLED_APPS += CUSTOM_APPS
 INSTALLED_APPS += [
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'drf_yasg',
 ]
@@ -184,9 +200,37 @@ MEDIA_URL = '/media/'
 
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# Files without a public URL (payment vouchers). Never serve this folder
+# from the web server: the API serves each file with a signed link.
+PRIVATE_MEDIA_ROOT = Path(
+    env.str('PRIVATE_MEDIA_ROOT', default=str(BASE_DIR / 'private_media'))
+)
+
 AUTH_USER_MODEL = 'esports.CustomUser'
 
 CORS_ALLOWED_ORIGINS = [o for o in env('CORS_ALLOWED_ORIGINS') if o]
+CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# The API docs (Swagger / ReDoc) list every endpoint: only in development
+# unless API_DOCS=True.
+API_DOCS = env.bool('API_DOCS', default=DEBUG)
+
+# Production security (HTTPS behind a reverse proxy such as nginx).
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=60 * 60 * 24)
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
+        'SECURE_HSTS_INCLUDE_SUBDOMAINS', default=False
+    )
+    SECURE_HSTS_PRELOAD = False
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+X_FRAME_OPTIONS = 'DENY'
 
 DEFAULT_SUPERADMIN_USERNAME = env('DEFAULT_SUPERADMIN_USERNAME')
 DEFAULT_SUPERADMIN_PASSWORD = env('DEFAULT_SUPERADMIN_PASSWORD')
@@ -200,15 +244,33 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.ScopedRateThrottle',
+    ),
+    # Requests per client IP. Only the views with a ``throttle_scope`` are
+    # limited: login (password guessing), registration (spam) and the
+    # public search of registrations.
+    'DEFAULT_THROTTLE_RATES': {
+        'login': env.str('THROTTLE_LOGIN', default='10/min'),
+        'register': env.str('THROTTLE_REGISTER', default='20/hour'),
+        'lookup': env.str('THROTTLE_LOOKUP', default='60/min'),
+    },
+    # Proxies in front of Django (nginx = 1): needed to read the real
+    # client IP from X-Forwarded-For.
+    'NUM_PROXIES': env.int('NUM_PROXIES', default=0) or None,
 }
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(
-        minutes=env.int('JWT_ACCESS_MINUTES', default=60)
+        minutes=env.int('JWT_ACCESS_MINUTES', default=15)
     ),
     'REFRESH_TOKEN_LIFETIME': timedelta(
         days=env.int('JWT_REFRESH_DAYS', default=1)
     ),
+    # Each refresh gives a new refresh token and the old one stops working,
+    # so a stolen token is useful for less time; logout blacklists it.
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 SWAGGER_SETTINGS = {
@@ -223,7 +285,26 @@ SWAGGER_SETTINGS = {
     },
 }
 
-if len(sys.argv) > 1 and sys.argv[1] == 'test':
+# Shared by the processes of the server (the request limits are counted
+# here).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+        'LOCATION': env.str('CACHE_DIR', default=str(BASE_DIR / '.cache')),
+    }
+}
+
+if TESTING:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+    # Request limits are tested on their own (test_security).
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+        scope: '10000/min'
+        for scope in REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']
+    }
     # Hashing passwords is slow on purpose: tests do not need it.
     PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
     # Tests create their own users: ignore the default superadmin of .env.

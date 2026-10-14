@@ -83,11 +83,16 @@ async function refreshAccess(): Promise<boolean> {
   })
     .then(async (response) => {
       if (!response.ok) {
+        // Another tab may have rotated the refresh token first: use its new
+        // tokens instead of logging out.
+        const current = loadTokens()
+        if (current && current.refresh !== tokens.refresh) return true
         saveTokens(null)
         return false
       }
-      const data = (await response.json()) as { access: string }
-      saveTokens({ ...tokens, access: data.access })
+      // The refresh token rotates: the old one is blacklisted on the server.
+      const data = (await response.json()) as { access: string; refresh?: string }
+      saveTokens({ access: data.access, refresh: data.refresh ?? tokens.refresh })
       return true
     })
     .catch(() => false)

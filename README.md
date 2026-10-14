@@ -50,7 +50,8 @@ endpoints; the Django admin site is not used.
 
 | Endpoint | Access |
 |---|---|
-| `POST /api/admin/login/` · `POST /api/token/refresh/` · `GET /api/admin/me/` | — / admin |
+| `POST /api/admin/login/` · `POST /api/token/refresh/` (rotates the refresh token) · `POST /api/admin/logout/` · `GET /api/admin/me/` | — / admin |
+| `GET /api/registrations/{id}/voucher/?t=` (signed link from the admin list, valid 1 hour) | signed link |
 | `GET,POST /api/admin/` · `PATCH,DELETE /api/admin/{id}/` · `PUT /api/admin/{id}/games/` · `POST /api/admin/{id}/reset-password/` | superadmin |
 | `GET,PATCH /api/settings/` | public / superadmin |
 | `GET /api/games/` · `POST /api/games/` · `PATCH /api/games/{id}/` · `POST /api/games/{id}/activate/` | public / superadmin / game admin (description, rules, images, bases, team size) |
@@ -140,7 +141,65 @@ python manage.py seed_demo --reset    # replace them
 
 It also creates one admin per game (`admin_dota_2`, `admin_brawl_stars`, ...);
 their password is in `esports/management/commands/seed_demo.py`. Local
-development only.
+development only: the command refuses to run with `DEBUG=False`.
+
+## Deployment
+
+Checklist (`python manage.py check --deploy` must only warn about the HSTS
+subdomains / preload options):
+
+- `.env`: `DEBUG=False`, a random `SECRET_KEY` of 50+ characters
+  (`python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`),
+  `ALLOWED_HOSTS=your.domain`, `CSRF_TRUSTED_ORIGINS=https://your.domain`,
+  `NUM_PROXIES=1` behind nginx (real client IP for the request limits) and a
+  strong `DEFAULT_SUPERADMIN_PASSWORD` (a weak one is not created). Real
+  environment variables win over the `.env` file. Django refuses to start
+  with `DEBUG=False` and an empty or `change-me` secret key.
+- Never run `seed_demo` in production.
+- `python manage.py migrate` and `python manage.py collectstatic`, then run
+  Django with gunicorn (`gunicorn core.wsgi -w 3 -b 127.0.0.1:8000`), not
+  `runserver`.
+- Build the frontend with `pnpm build` (same domain: no `VITE_API_URL`
+  needed).
+- HTTPS is required: with `DEBUG=False` Django redirects to HTTPS, sends
+  HSTS and marks the cookies as secure.
+- Payment vouchers live in `PRIVATE_MEDIA_ROOT` (default `private_media/`):
+  **never** serve that folder; the API serves each file with a signed link.
+- Request limits per IP (`THROTTLE_LOGIN`, `THROTTLE_REGISTER`,
+  `THROTTLE_LOOKUP`), counted in `CACHE_DIR` (default `.cache/`).
+- The API docs (`/api/docs/`) are off unless `API_DOCS=True`.
+- Back up the database and both `media/` and `private_media/`.
+
+nginx example:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name your.domain;
+    # ssl_certificate ... (e.g. certbot)
+
+    client_max_body_size 10m;          # uploads (MAX_UPLOAD_SIZE_MB=5)
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Frame-Options DENY always;
+
+    root /srv/esports/frontend/dist;   # pnpm build
+    location / { try_files $uri /index.html; }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /static/ { alias /srv/esports/staticfiles/; }
+    location /media/ {
+        alias /srv/esports/media/;     # NOT private_media
+        add_header X-Content-Type-Options nosniff always;
+    }
+}
+server { listen 80; server_name your.domain; return 301 https://$host$request_uri; }
+```
 
 ## Tests
 
