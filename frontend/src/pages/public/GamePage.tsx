@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  ArrowSquareOut,
   Broadcast,
   CalendarBlank,
   Crown,
@@ -21,6 +22,7 @@ import {
   GroupMatches,
   GroupTable,
   MatchCard,
+  MatchStrip,
   StreamEmbed,
 } from '../../components/tournament'
 import { Badge, Button, cx, EmptyState, ErrorState, Select, Skeleton, Tabs, TeamLogo } from '../../components/ui'
@@ -111,7 +113,7 @@ export default function GamePage() {
             transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             className="pt-8"
           >
-            {tab === 'resumen' && <Overview game={game.data} tournament={selected} />}
+            {tab === 'resumen' && <Overview game={game.data} tournament={selected} onTab={setTab} />}
             {tab === 'reglas' && <Rules game={game.data} />}
             {!selected && tab !== 'resumen' && tab !== 'reglas' && tab !== 'stream' ? (
               <NoTournament />
@@ -262,7 +264,15 @@ function stageDetails(stage: Stage) {
   return parts.join(' · ')
 }
 
-function Overview({ game, tournament }: { game: Game; tournament?: Tournament }) {
+function Overview({
+  game,
+  tournament,
+  onTab,
+}: {
+  game: Game
+  tournament?: Tournament
+  onTab: (tab: Tab) => void
+}) {
   const stages = useStages(tournament?.id ?? 0)
   const now = useNow(30000)
   const startsAt = tournament?.registration.starts_at
@@ -311,6 +321,9 @@ function Overview({ game, tournament }: { game: Game; tournament?: Tournament })
             )}
           </section>
         )}
+        {tournament && <KeyDates tournament={tournament} now={now} />}
+        {tournament && <OverviewMatches tournament={tournament} onTab={onTab} />}
+        {tournament && <TeamsPreview tournament={tournament} onTab={onTab} />}
       </div>
 
       {tournament ? (
@@ -365,6 +378,115 @@ function Overview({ game, tournament }: { game: Game; tournament?: Tournament })
   )
 }
 
+/** Timeline of the tournament dates (Liquipedia infobox style). */
+function KeyDates({ tournament, now }: { tournament: Tournament; now: number }) {
+  const steps = [
+    { label: 'Abren inscripciones', date: tournament.registration.starts_at },
+    { label: 'Cierran inscripciones', date: tournament.registration.ends_at },
+    { label: 'Inicio del torneo', date: tournament.start_date },
+    { label: 'Fin del torneo', date: tournament.end_date },
+  ]
+    .filter((step): step is { label: string; date: string } => !!step.date)
+    .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
+  if (steps.length < 2) return null
+  const next = steps.findIndex((step) => Date.parse(step.date) > now)
+  return (
+    <section>
+      <h2 className="mb-4 font-display text-2xl font-semibold">Fechas clave</h2>
+      <ol className="surface grid gap-5 p-5 sm:grid-cols-2 xl:grid-flow-col xl:grid-cols-none xl:auto-cols-fr">
+        {steps.map((step, index) => {
+          const done = next === -1 || index < next
+          const current = index === next
+          return (
+            <li key={step.label} className="relative flex gap-3 xl:flex-col xl:gap-2">
+              <span
+                className={cx(
+                  'mt-1 grid size-3 shrink-0 place-items-center rounded-full border-2 xl:mt-0',
+                  done ? 'border-win bg-win' : current ? 'border-accent bg-accent-soft' : 'border-ink-600',
+                )}
+              />
+              {index < steps.length - 1 && (
+                <span className={cx('absolute top-1.5 left-4 hidden h-px w-[calc(100%-0.5rem)] xl:block', done ? 'bg-win/40' : 'bg-white/10')} />
+              )}
+              <div>
+                <p className={cx('text-xs font-semibold uppercase tracking-wide', current ? 'text-accent' : 'text-ink-400')}>
+                  {step.label}
+                </p>
+                <p className={cx('mt-0.5 text-sm', done ? 'text-ink-300' : 'text-ink-100')}>{formatDate(step.date, true)}</p>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </section>
+  )
+}
+
+/** Next matches of the tournament or, when none is left, the last results. */
+function OverviewMatches({ tournament, onTab }: { tournament: Tournament; onTab: (tab: Tab) => void }) {
+  const schedule = useSchedule(tournament.id)
+  const matches = (schedule.data ?? []).filter((m) => !m.is_bye && m.participants.length === 2)
+  const pending = matches.filter((m) => m.status === 'scheduled' || m.status === 'live')
+  const done = matches.filter((m) => m.status === 'completed')
+  const upcoming = pending.length > 0
+  const list = upcoming ? pending.slice(0, 4) : done.slice(-4).reverse()
+  if (!list.length) return null
+  return (
+    <section>
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <h2 className="font-display text-2xl font-semibold">{upcoming ? 'Matchs por jugar' : 'Últimos resultados'}</h2>
+        <button onClick={() => onTab('cronograma')} className="inline-flex items-center gap-1.5 text-sm text-ink-300 transition hover:text-ink-100">
+          Ver cronograma <ArrowRight size={14} />
+        </button>
+      </div>
+      <div className="surface divide-y divide-white/[0.05] overflow-hidden">
+        {list.map((match) => (
+          <div key={match.id}>
+            <p className="flex flex-wrap gap-x-2 px-4 pt-2.5 text-[11px] text-ink-400">
+              <span>{match.stage_name}</span>
+              {match.group_name && <span>· {match.group_name}</span>}
+              <span>· Bo{match.best_of}</span>
+            </p>
+            <MatchStrip match={match} />
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** A few confirmed teams with a link to the full list. */
+function TeamsPreview({ tournament, onTab }: { tournament: Tournament; onTab: (tab: Tab) => void }) {
+  const participants = useParticipants(tournament.id)
+  const list = participants.data ?? []
+  if (!list.length) return null
+  const team = tournament.type_of_game === 'team'
+  const shown = list.slice(0, 8)
+  return (
+    <section>
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <h2 className="font-display text-2xl font-semibold">
+          {list.length} {team ? (list.length === 1 ? 'equipo confirmado' : 'equipos confirmados') : list.length === 1 ? 'jugador confirmado' : 'jugadores confirmados'}
+        </h2>
+        <button onClick={() => onTab('equipos')} className="inline-flex items-center gap-1.5 text-sm text-ink-300 transition hover:text-ink-100">
+          Ver todos <ArrowRight size={14} />
+        </button>
+      </div>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {shown.map((registration) => (
+          <li key={registration.id} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-ink-900 px-3 py-2.5">
+            <TeamLogo src={registration.logo} name={registration.display_name} size={28} />
+            <span className="min-w-0 truncate text-sm font-medium">{registration.display_name}</span>
+          </li>
+        ))}
+      </ul>
+      {list.length > shown.length && (
+        <p className="mt-2 text-sm text-ink-400">y {list.length - shown.length} más.</p>
+      )}
+    </section>
+  )
+}
+
 // --------------------------------------------------------------- rules
 
 function Rules({ game }: { game: Game }) {
@@ -374,31 +496,51 @@ function Rules({ game }: { game: Game }) {
     )
   }
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_1fr]">
+    <div className={cx('grid gap-8', game.rules && game.bases && 'lg:grid-cols-[1fr_340px] lg:items-start')}>
       {game.rules && (
         <section>
           <h2 className="mb-4 font-display text-2xl font-semibold">Reglas</h2>
-          <div className="surface whitespace-pre-line p-6 leading-relaxed text-ink-300">{game.rules}</div>
+          <div className="surface max-w-[80ch] whitespace-pre-line p-6 leading-relaxed text-ink-300">{game.rules}</div>
         </section>
       )}
-      {game.bases && (
-        <section className={cx(!game.rules && 'lg:col-span-2')}>
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <h2 className="font-display text-2xl font-semibold">Bases oficiales</h2>
-            <a href={game.bases} target="_blank" rel="noreferrer" download>
-              <Button variant="secondary" icon={<DownloadSimple size={16} />}>
-                Descargar PDF
-              </Button>
-            </a>
-          </div>
-          <object data={game.bases} type="application/pdf" className="surface h-[70dvh] w-full">
-            <a href={game.bases} className="flex items-center gap-2 p-6 text-sm text-ink-300">
-              <FilePdf size={20} /> Abrir las bases en PDF
-            </a>
-          </object>
-        </section>
-      )}
+      {game.bases && <BasesCard url={game.bases} />}
     </div>
+  )
+}
+
+/** Official rules PDF: a compact card that opens or downloads it (embedding
+ * the PDF is blocked by many browsers and left a big empty box). */
+function BasesCard({ url }: { url: string }) {
+  const file = decodeURIComponent(url.split('/').pop() ?? 'bases.pdf')
+  return (
+    <section className="lg:sticky lg:top-36">
+      <h2 className="mb-4 font-display text-2xl font-semibold">Bases oficiales</h2>
+      <div className="surface max-w-md p-5">
+        <div className="flex items-center gap-4">
+          <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-accent-soft text-accent">
+            <FilePdf size={26} weight="duotone" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium">Bases del torneo</p>
+            <p className="truncate text-xs text-ink-400" title={file}>
+              {file}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <a href={url} target="_blank" rel="noreferrer">
+            <Button className="w-full" icon={<ArrowSquareOut size={16} />}>
+              Ver PDF
+            </Button>
+          </a>
+          <a href={url} download>
+            <Button variant="secondary" className="w-full" icon={<DownloadSimple size={16} />}>
+              Descargar
+            </Button>
+          </a>
+        </div>
+      </div>
+    </section>
   )
 }
 
