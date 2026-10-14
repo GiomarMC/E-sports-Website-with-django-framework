@@ -8,8 +8,10 @@ Internet ──443──> Caddy (HTTPS automático, frontend, /media)
 ```
 
 - Cada push a `main` corre los tests en GitHub Actions y, si pasan, entra
-  por SSH a la VM y ejecuta `deploy/deploy.sh` (actualiza el código,
-  reconstruye y reinicia; las migraciones se aplican solas).
+  por SSH a la VM y ejecuta `deploy/deploy.sh`: respalda la base de datos,
+  actualiza el código, reconstruye y reinicia (las migraciones se aplican
+  solas al arrancar la API, en `deploy/entrypoint.sh`). Si el respaldo
+  falla, el despliegue se cancela sin cambiar nada.
 - Respaldo diario de la base de datos y los archivos a las 03:30.
 
 Archivos: `Dockerfile` (API), `deploy/Dockerfile.web` (frontend + Caddy),
@@ -201,10 +203,15 @@ En otras ramas y pull requests solo corren los tests.
 
 ## 10. Mantenimiento
 
-- **Respaldos**: `/var/backups/esports` (14 días). Bájalos a tu PC de vez
-  en cuando, porque si se pierde la VM se pierden con ella:
+- **Respaldos**: `/var/backups/esports`. Diarios (`db-*` y `files-*`, 14
+  días) y uno de la base antes de cada despliegue (`predeploy-db-*`, los
+  últimos 10). Bájalos a tu PC de vez en cuando, porque si se pierde la VM
+  se pierden con ella:
   `scp -r ubuntu@IP_DE_LA_VM:/var/backups/esports ./respaldos`
-- **Restaurar**: `./deploy/restore.sh db-XXXX.dump files-XXXX.tar.gz`
+- **Restaurar**: `./deploy/restore.sh db-XXXX.dump files-XXXX.tar.gz`.
+  Si un despliegue dejó mal la base, vuelve al código anterior (`git
+  revert` y push) y restaura solo la base:
+  `./deploy/restore.sh /var/backups/esports/predeploy-db-XXXX.dump`
 - **HSTS**: cuando HTTPS funcione bien unos días, sube
   `SECURE_HSTS_SECONDS` a `31536000` en `.env` y vuelve a desplegar.
 - **Actualizar Ubuntu**: `sudo apt update && sudo apt upgrade -y` cada
