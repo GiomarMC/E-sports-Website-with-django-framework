@@ -20,8 +20,7 @@ const future = (value: string | null | undefined, now: number): value is string 
   !!value && Date.parse(value) > now
 
 /** Next milestone of a tournament: the registration opening, its closing
- * or the start of the tournament (the registration window of the tournament
- * already falls back to the general one). */
+ * or the start of the tournament. */
 export function tournamentMilestone(tournament: Tournament, now: number, site?: SiteSettings): Milestone | null {
   if (tournament.status !== 'upcoming') return null
   const { starts_at, ends_at, is_open } = tournament.registration
@@ -32,23 +31,6 @@ export function tournamentMilestone(tournament: Tournament, now: number, site?: 
     return { kind: 'starts', target: tournament.start_date, label: LABELS.starts }
   }
   return null
-}
-
-/** General countdown of the event: the general registration window set in
- * the settings and, once it is over, the start of the first tournament. */
-export function generalMilestone(site: SiteSettings | undefined, tournaments: Tournament[], now: number): Milestone | null {
-  if (site?.registration_enabled) {
-    if (future(site.registration_start, now)) {
-      return { kind: 'opens', target: site.registration_start, label: LABELS.opens }
-    }
-    if (future(site.registration_end, now)) {
-      return { kind: 'closes', target: site.registration_end, label: LABELS.closes }
-    }
-  }
-  const first = tournaments
-    .filter((t) => t.status === 'upcoming' && future(t.start_date, now))
-    .sort((a, b) => a.start_date.localeCompare(b.start_date))[0]
-  return first ? { kind: 'starts', target: first.start_date, label: 'El evento empieza en' } : null
 }
 
 export function countdownParts(ms: number) {

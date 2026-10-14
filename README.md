@@ -13,9 +13,9 @@ PostgreSQL (via **Docker**).
 | Model | Description |
 |---|---|
 | `CustomUser` | Staff accounts only. `superadmin` manages everything; `admin` manages only the games assigned to them (`AdminGame`). Players do **not** have accounts. |
-| `SiteSettings` | Global configuration: event name, global registration switch and global registration dates. |
+| `SiteSettings` | Global configuration: event name and global registration switch (when off, no tournament accepts registrations). |
 | `Game` | Discipline: image, description, rules (text + PDF), `individual`/`team`, min/max players per team. |
-| `Tournament` | Edition of a game: fee per player, own registration switch, optional registration dates (override the global ones), slots. |
+| `Tournament` | Edition of a game: fee per player, own registration switch, optional registration dates (no start: open right away; no end: open until closed or the tournament starts), slots. |
 | `Registration` / `RegistrationMember` | Public registration of a team (or a single player) with its members, one captain and the payment voucher. `amount_due = fee_per_player × members`. It is final once sent: admins only review it (confirm/reject), enable/disable it and set its seed. |
 | `Stage` | Phase of a tournament. A tournament is built chaining stages by `order`, e.g. *Groups → Playoffs*. |
 | `Match` / `MatchParticipant` | Matches with participants, scores and placements. `next_match` / `loser_next_match` define where winners and losers go. |
@@ -39,8 +39,8 @@ repeated until there are results (`POST /stages/{id}/reset/` clears a stage).
 
 Registrations of a tournament are open when: the game is active, the
 tournament is `upcoming`, the global switch and the tournament switch are on,
-`now` is between the start/end dates (the tournament ones, or the global ones
-when empty) and there are slots left.
+`now` is between the tournament start/end dates (empty start: open right
+away; empty end: open until closed) and there are slots left.
 
 ## Main endpoints
 
@@ -138,7 +138,7 @@ python manage.py seed_demo --images   # games, teams, groups, brackets, results
 python manage.py seed_demo --reset    # replace them
 ```
 
-It also creates one admin per game (`admin_dota2`, `admin_brawl_stars`, ...);
+It also creates one admin per game (`admin_dota_2`, `admin_brawl_stars`, ...);
 their password is in `esports/management/commands/seed_demo.py`. Local
 development only.
 

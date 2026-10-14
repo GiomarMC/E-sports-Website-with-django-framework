@@ -291,8 +291,6 @@ export interface GroupStandings {
 export interface SiteSettings {
   event_name: string
   registration_enabled: boolean
-  registration_start: string | null
-  registration_end: string | null
   main_stream_url: string
   currency: string
 }

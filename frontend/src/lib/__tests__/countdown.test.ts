@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countdownParts, countdownText, generalMilestone, tournamentMilestone } from '../countdown'
+import { countdownParts, countdownText, tournamentMilestone } from '../countdown'
 import type { SiteSettings, Tournament } from '../types'
 
 const NOW = Date.parse('2026-10-13T12:00:00Z')
@@ -18,7 +18,7 @@ function tournament(registration: Partial<Tournament['registration']>, extra: Pa
 }
 
 const site = (extra: Partial<SiteSettings> = {}) =>
-  ({ registration_enabled: true, registration_start: null, registration_end: null, ...extra }) as SiteSettings
+  ({ registration_enabled: true, ...extra }) as SiteSettings
 
 describe('tournamentMilestone', () => {
   it('counts down to the opening before the registration starts', () => {
@@ -42,22 +42,6 @@ describe('tournamentMilestone', () => {
 
   it('has no countdown for ongoing tournaments', () => {
     expect(tournamentMilestone(tournament({}, { status: 'ongoing' }), NOW)).toBeNull()
-  })
-})
-
-describe('generalMilestone', () => {
-  it('uses the general registration window of the settings', () => {
-    expect(generalMilestone(site({ registration_start: LATER }), [], NOW)?.kind).toBe('opens')
-    expect(generalMilestone(site({ registration_end: LATER }), [], NOW)?.kind).toBe('closes')
-  })
-
-  it('falls back to the first tournament start', () => {
-    const list = [tournament({}, { start_date: MUCH_LATER }), tournament({}, { start_date: LATER })]
-    expect(generalMilestone(site({ registration_end: BEFORE }), list, NOW)).toMatchObject({
-      kind: 'starts',
-      target: LATER,
-    })
-    expect(generalMilestone(site(), [], NOW)).toBeNull()
   })
 })
 

@@ -155,26 +155,12 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteSettings
         fields = [
-            'event_name', 'registration_enabled', 'registration_start',
-            'registration_end', 'main_stream_url', 'currency'
+            'event_name', 'registration_enabled', 'main_stream_url',
+            'currency'
             ]
 
     def get_currency(self, obj):
         return settings.CURRENCY
-
-    def validate(self, data):
-        start = data.get(
-            'registration_start', getattr(self.instance, 'registration_start',
-                                          None))
-        end = data.get(
-            'registration_end', getattr(self.instance, 'registration_end',
-                                        None))
-        if start and end and start >= end:
-            raise serializers.ValidationError(
-                {'registration_end':
-                    'La fecha de fin debe ser posterior al inicio.'}
-                )
-        return data
 
 
 # ---------------------------------------------------------------- games
@@ -334,7 +320,7 @@ class TournamentSerializer(serializers.ModelSerializer):
     def get_registration(self, obj):
         site = self.context.get('site_settings')
         is_open, reason = obj.registration_state(site)
-        start, end = obj.registration_window(site)
+        start, end = obj.registration_window()
         return {
             'is_open': is_open,
             'reason': reason,

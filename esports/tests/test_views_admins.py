@@ -343,17 +343,12 @@ class SiteSettingsViewTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_patch_with_invalid_dates_returns_400(self):
-        # Arrange
-        self.client.force_authenticate(user=self.superadmin)
-        payload = {
-            'registration_start': '2026-11-10T10:00:00Z',
-            'registration_end': '2026-11-01T10:00:00Z',
-        }
-
+    def test_has_no_general_registration_dates(self):
+        # Each tournament sets its own registration dates.
         # Act
-        response = self.client.patch(self.url, payload, format='json')
+        response = self.client.get(self.url)
 
         # Assert
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('registration_end', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('registration_start', response.data)
+        self.assertNotIn('registration_end', response.data)

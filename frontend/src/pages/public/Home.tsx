@@ -1,10 +1,10 @@
 import { ArrowRight, Broadcast, CalendarBlank, GameController, Timer, UsersThree } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
 import { Link } from 'react-router-dom'
-import { Countdown, CountdownText } from '../../components/countdown'
+import { CountdownText } from '../../components/countdown'
 import { MatchCard, StreamEmbed } from '../../components/tournament'
 import { Badge, Button, cx, EmptyState, ErrorState, SectionTitle, Skeleton } from '../../components/ui'
-import { generalMilestone, tournamentMilestone, type Milestone } from '../../lib/countdown'
+import { tournamentMilestone, type Milestone } from '../../lib/countdown'
 import { formatDate, formatDay, formatMoney, formatTime, playersLabel } from '../../lib/format'
 import { useGames, useMatches, useSettings, useStreams, useTournaments } from '../../lib/queries'
 import { currentTournament } from '../../lib/tournament'
@@ -40,7 +40,7 @@ export default function Home() {
             />
           </div>
         ) : (
-          <GamePanels games={games.data} tournaments={tournaments.data ?? []} settings={settings} />
+          <GamePanels games={games.data} tournaments={tournaments.data ?? []} />
         )}
         <div className="pointer-events-none absolute inset-x-0 top-0 hidden md:block">
           <div className="mx-auto max-w-[1400px] px-8 pt-10">
@@ -56,8 +56,7 @@ export default function Home() {
       </section>
 
       <div className="mx-auto max-w-[1400px] space-y-24 px-4 pt-16 md:px-8">
-        <EventCountdown settings={settings} games={games.data ?? []} tournaments={tournaments.data ?? []} />
-        <OpenRegistrations tournaments={tournaments.data ?? []} games={games.data ?? []} />
+        <Registrations settings={settings} games={games.data ?? []} tournaments={tournaments.data ?? []} />
         <LiveNow />
         <UpcomingMatches games={games.data ?? []} />
       </div>
@@ -65,21 +64,11 @@ export default function Home() {
   )
 }
 
-function GamePanels({
-  games,
-  tournaments,
-  settings,
-}: {
-  games: Game[]
-  tournaments: Tournament[]
-  settings?: SiteSettings
-}) {
-  const now = useNow(30000)
+function GamePanels({ games, tournaments }: { games: Game[]; tournaments: Tournament[] }) {
   return (
     <div className="group/panels scrollbar-thin flex h-[min(78dvh,760px)] snap-x snap-mandatory overflow-x-auto md:overflow-hidden">
       {games.map((game, index) => {
         const tournament = currentTournament(tournaments, game.id)
-        const milestone = tournament && tournamentMilestone(tournament, now, settings)
         return (
           <motion.div
             key={game.id}
@@ -120,13 +109,6 @@ function GamePanels({
                     </>
                   )}
                 </p>
-                {milestone && (
-                  <p className="mt-3 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-ink-950/60 px-3 py-1.5 text-xs text-ink-300 backdrop-blur">
-                    <Timer size={14} className={milestone.kind === 'closes' ? 'text-warn' : 'text-ink-300'} />
-                    {milestone.label}
-                    <CountdownText target={milestone.target} className="font-semibold text-ink-100" />
-                  </p>
-                )}
                 <span className="mt-6 inline-flex translate-y-2 items-center gap-2 text-sm font-semibold text-ink-100 opacity-0 transition duration-500 group-hover/panel:translate-y-0 group-hover/panel:opacity-100">
                   Ver torneo <ArrowRight size={16} />
                 </span>
@@ -145,9 +127,10 @@ const KIND_TONE: Record<Milestone['kind'], string> = {
   starts: 'text-win',
 }
 
-/** General countdown (settings) next to one countdown per game, because a
- * game can extend its registration while another one already closed it. */
-function EventCountdown({
+/** The registration of every game in one place: its own countdown (each
+ * tournament has its own dates), price and the button to sign up. The game
+ * images already are in the panels above, so the rows go without them. */
+function Registrations({
   settings,
   games,
   tournaments,
@@ -157,123 +140,78 @@ function EventCountdown({
   tournaments: Tournament[]
 }) {
   const now = useNow(30000)
-  const general = generalMilestone(settings, tournaments, now)
   const rows = games
-    .map((game) => {
-      const tournament = currentTournament(tournaments, game.id)
-      return { game, tournament, milestone: tournament ? tournamentMilestone(tournament, now, settings) : null }
-    })
-    .filter((row) => row.tournament)
-  if (!general && rows.every((row) => !row.milestone)) return null
+    .map((game) => ({ game, tournament: currentTournament(tournaments, game.id) }))
+    .filter((row): row is { game: Game; tournament: Tournament } => !!row.tournament)
+  if (rows.length === 0) return null
+  const anyOpen = rows.some((row) => row.tournament.registration.is_open)
 
-  return (
-    <section className="surface grid overflow-hidden lg:grid-cols-[1.15fr_1fr]">
-      <div className="relative flex flex-col justify-center gap-6 border-b border-white/[0.06] p-6 sm:p-10 lg:border-r lg:border-b-0">
-        <div className="pointer-events-none absolute -top-24 -left-24 size-72 rounded-full bg-accent/10 blur-3xl" />
-        <div className="relative">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-accent">
-            {settings?.event_name ?? 'Esports'} · Cuenta regresiva
-          </p>
-          <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight md:text-4xl">
-            {general ? general.label : 'Sigue cada juego'}
-          </h2>
-        </div>
-        {general ? (
-          <div className="relative">
-            <Countdown key={general.target} target={general.target} />
-            <p className="mt-4 text-sm text-ink-400 first-letter:uppercase">
-              {formatDay(general.target)} · {formatTime(general.target)}
-            </p>
-          </div>
-        ) : (
-          <p className="relative max-w-[48ch] text-sm leading-relaxed text-ink-400">
-            Las inscripciones generales ya cerraron. Cada juego puede tener sus propias fechas: revisa su contador.
-          </p>
-        )}
-      </div>
-      <div className="p-2 sm:p-3">
-        <p className="px-3 pt-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-400">Por juego</p>
-        <ul className="divide-y divide-white/[0.05]">
-          {rows.map(({ game, tournament, milestone }) => (
-            <li key={game.id}>
-              <Link
-                to={`/juegos/${game.id}`}
-                className="group flex items-center gap-3 rounded-xl px-3 py-3 transition hover:bg-white/[0.03]"
-              >
-                <div className="size-11 shrink-0 overflow-hidden rounded-lg bg-ink-800">
-                  {game.images && <img src={game.images} alt="" className="size-full object-cover" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-display font-semibold">{game.name}</p>
-                  <p className="truncate text-xs text-ink-400">
-                    {milestone
-                      ? milestone.label
-                      : tournament!.status === 'ongoing'
-                        ? 'Torneo en curso'
-                        : tournament!.status === 'completed'
-                          ? 'Torneo finalizado'
-                          : tournament!.registration.reason}
-                  </p>
-                </div>
-                {milestone ? (
-                  <CountdownText
-                    key={milestone.target}
-                    target={milestone.target}
-                    className={cx('text-sm font-semibold', KIND_TONE[milestone.kind])}
-                  />
-                ) : tournament!.status === 'ongoing' ? (
-                  <Badge tone="live">En curso</Badge>
-                ) : null}
-                <ArrowRight size={14} className="shrink-0 text-ink-600 transition group-hover:text-ink-300" />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  )
-}
-
-function OpenRegistrations({ tournaments, games }: { tournaments: Tournament[]; games: Game[] }) {
-  const open = tournaments.filter((t) => t.registration.is_open)
-  if (open.length === 0) return null
   return (
     <section>
-      <SectionTitle eyebrow="Inscripciones" title="Arma tu equipo y entra a competir" />
-      <div className="grid gap-4 lg:grid-cols-2">
-        {open.map((tournament, index) => {
-          const game = games.find((g) => g.id === tournament.game)
+      <SectionTitle
+        eyebrow="Inscripciones"
+        title={anyOpen ? 'Arma tu equipo y entra a competir' : 'Fechas de cada juego'}
+      />
+      <div className="surface divide-y divide-white/[0.05]">
+        {rows.map(({ game, tournament }, index) => {
+          const milestone = tournamentMilestone(tournament, now, settings)
+          const open = tournament.registration.is_open
           return (
             <motion.div
-              key={tournament.id}
-              initial={{ opacity: 0, y: 16 }}
+              key={game.id}
+              initial={{ opacity: 0, y: 12 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-60px' }}
-              transition={{ delay: index * 0.06, type: 'spring', stiffness: 120, damping: 20 }}
-              className="surface grid gap-5 p-5 sm:grid-cols-[auto_1fr_auto] sm:items-center"
+              viewport={{ once: true, margin: '-40px' }}
+              transition={{ delay: index * 0.05, type: 'spring', stiffness: 140, damping: 22 }}
+              className="grid gap-4 p-5 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-6 sm:px-6"
             >
-              <div className="size-16 overflow-hidden rounded-xl bg-ink-800">
-                {game?.images && <img src={game.images} alt="" className="size-full object-cover" />}
-              </div>
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">{tournament.game_name}</p>
-                <p className="truncate font-display text-xl font-semibold">{tournament.name}</p>
-                <p className="mt-1 text-sm text-ink-400">
+                <Link to={`/juegos/${game.id}`} className="font-display text-xl font-semibold hover:text-accent">
+                  {game.name}
+                </Link>
+                <p className="mt-0.5 truncate text-sm text-ink-400">
                   {formatMoney(tournament.fee_per_player, tournament.currency)} por jugador ·{' '}
                   {playersLabel(tournament.min_players, tournament.max_players)}
-                  {tournament.registration.ends_at && (
-                    <>
-                      {' '}
-                      · Cierra en <CountdownText target={tournament.registration.ends_at} className="text-warn" />
-                    </>
-                  )}
                 </p>
               </div>
-              <Link to={`/torneos/${tournament.id}/inscripcion`}>
-                <Button size="lg" icon={<ArrowRight size={18} />} className="w-full flex-row-reverse sm:w-auto">
-                  Inscribirse
-                </Button>
-              </Link>
+              <div className="min-w-0">
+                <p
+                  className={cx(
+                    'flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.14em]',
+                    milestone ? KIND_TONE[milestone.kind] : 'text-ink-400',
+                  )}
+                >
+                  <Timer size={13} weight="bold" />
+                  {milestone
+                    ? milestone.label
+                    : tournament.status === 'ongoing'
+                      ? 'Torneo en curso'
+                      : tournament.status === 'completed'
+                        ? 'Torneo finalizado'
+                        : tournament.registration.reason}
+                </p>
+                {milestone && (
+                  <p className="mt-1 flex flex-wrap items-baseline gap-x-3">
+                    <CountdownText key={milestone.target} target={milestone.target} className="text-2xl font-semibold text-ink-100" />
+                    <span className="text-xs text-ink-400 first-letter:uppercase">
+                      {formatDay(milestone.target)} · {formatTime(milestone.target)}
+                    </span>
+                  </p>
+                )}
+              </div>
+              {open ? (
+                <Link to={`/torneos/${tournament.id}/inscripcion`}>
+                  <Button icon={<ArrowRight size={16} />} className="w-full flex-row-reverse sm:w-auto">
+                    Inscribirse
+                  </Button>
+                </Link>
+              ) : (
+                <Link to={`/juegos/${game.id}`}>
+                  <Button variant="secondary" className="w-full sm:w-auto">
+                    Ver torneo
+                  </Button>
+                </Link>
+              )}
             </motion.div>
           )
         })}

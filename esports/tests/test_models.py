@@ -128,10 +128,11 @@ class TournamentRegistrationStateTestCase(APITestCase):
         # Assert
         self.assertFalse(is_open)
 
-    def test_global_window_applies_without_override(self):
+    def test_closed_after_registration_end(self):
         # Arrange
-        self.site.registration_end = timezone.now() - timedelta(days=1)
-        self.site.save()
+        self.tournament.registration_end = (
+            timezone.now() - timedelta(days=1)
+        )
 
         # Act
         is_open, reason = self.tournament.registration_state()
@@ -139,20 +140,6 @@ class TournamentRegistrationStateTestCase(APITestCase):
         # Assert
         self.assertFalse(is_open)
         self.assertIn('terminó', reason)
-
-    def test_tournament_window_overrides_global(self):
-        # Arrange
-        self.site.registration_end = timezone.now() - timedelta(days=1)
-        self.site.save()
-        self.tournament.registration_end = (
-            timezone.now() + timedelta(days=1)
-        )
-
-        # Act
-        is_open, _ = self.tournament.registration_state()
-
-        # Assert
-        self.assertTrue(is_open)
 
     def test_not_started_yet(self):
         # Arrange

@@ -113,8 +113,6 @@ class Command(BaseCommand):
         site = SiteSettings.load()
         site.event_name = 'UNSA Esports'
         site.registration_enabled = True
-        site.registration_start = timezone.now() - timedelta(days=7)
-        site.registration_end = timezone.now() + timedelta(days=14)
         site.save()
         ContactInfo.objects.get_or_create(
             platform='Instagram', link='https://instagram.com/unsa.esports'
@@ -140,6 +138,8 @@ class Command(BaseCommand):
                 game=game, name=f"Copa {data['name']} 2026",
                 start_date=timezone.now() + timedelta(days=index - 1),
                 fee_per_player=data['fee'],
+                registration_start=timezone.now() - timedelta(days=7),
+                registration_end=timezone.now() + timedelta(days=14),
             )
             # Demo data: fake number and group link.
             OrganizerContact.objects.create(

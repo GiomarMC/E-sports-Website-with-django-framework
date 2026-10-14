@@ -3,7 +3,6 @@ import { useState, type FormEvent } from 'react'
 import { Button, ErrorState, Field, Input, Skeleton, Toggle } from '../../components/ui'
 import { PageHeader } from '../../layouts/AdminLayout'
 import { api } from '../../lib/api'
-import { fromInputDateTime, toInputDateTime } from '../../lib/format'
 import { useApiMutation, useContacts, useSettings } from '../../lib/queries'
 import type { SiteSettings } from '../../lib/types'
 import { OrganizerContactsPanel } from './OrganizerContacts'
@@ -19,21 +18,12 @@ function SettingsForm({ settings }: { settings: SiteSettings }) {
   const [form, setForm] = useState({
     event_name: settings.event_name,
     registration_enabled: settings.registration_enabled,
-    registration_start: toInputDateTime(settings.registration_start),
-    registration_end: toInputDateTime(settings.registration_end),
     main_stream_url: settings.main_stream_url,
   })
 
   const save = useApiMutation({
     request: () =>
-      api('settings/', {
-        method: 'PATCH',
-        body: {
-          ...form,
-          registration_start: fromInputDateTime(form.registration_start),
-          registration_end: fromInputDateTime(form.registration_end),
-        },
-      }),
+      api('settings/', { method: 'PATCH', body: form }),
     invalidate: [['settings'], ['tournaments'], ['tournament']],
     success: 'Configuración guardada',
   })
@@ -68,12 +58,13 @@ function SettingsForm({ settings }: { settings: SiteSettings }) {
           </div>
         </section>
 
-        <section className="surface space-y-5 p-6">
+        <section className="surface p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="font-display text-lg font-semibold">Inscripciones de todos los juegos</h2>
               <p className="text-sm text-ink-400">
-                Interruptor general y fechas por defecto. Cada torneo puede tener sus propias fechas.
+                Apagado, ningún juego acepta inscripciones. Encendido, cada torneo abre y cierra según sus propias
+                fechas (se configuran en Torneos).
               </p>
             </div>
             <label className="flex items-center gap-3 rounded-xl border border-white/[0.06] px-4 py-2.5">
@@ -84,28 +75,6 @@ function SettingsForm({ settings }: { settings: SiteSettings }) {
               />
               <span className="text-sm font-medium">{form.registration_enabled ? 'Habilitadas' : 'Deshabilitadas'}</span>
             </label>
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Inicio de inscripciones" error={errors.registration_start}>
-              {(id) => (
-                <Input
-                  id={id}
-                  type="datetime-local"
-                  value={form.registration_start}
-                  onChange={(e) => set('registration_start', e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Fin de inscripciones" error={errors.registration_end}>
-              {(id) => (
-                <Input
-                  id={id}
-                  type="datetime-local"
-                  value={form.registration_end}
-                  onChange={(e) => set('registration_end', e.target.value)}
-                />
-              )}
-            </Field>
           </div>
         </section>
         <div className="flex justify-end">

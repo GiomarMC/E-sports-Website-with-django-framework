@@ -58,9 +58,9 @@ class CustomUser(AbstractUser):
 class SiteSettings(models.Model):
     """Singleton with the global configuration of the event."""
     event_name = models.CharField(max_length=150, default='Esports')
+    # Global switch: when off no tournament accepts registrations. The dates
+    # are set on each tournament.
     registration_enabled = models.BooleanField(default=True)
-    registration_start = models.DateTimeField(null=True, blank=True)
-    registration_end = models.DateTimeField(null=True, blank=True)
     main_stream_url = models.URLField(blank=True)
 
     class Meta:
@@ -73,9 +73,6 @@ class SiteSettings(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1
         super().save(*args, **kwargs)
-
-    def clean(self):
-        validate_date_range(self.registration_start, self.registration_end)
 
     @classmethod
     def load(cls):
@@ -269,7 +266,8 @@ class Tournament(models.Model):
         validators=[MinValueValidator(Decimal('0.00'))]
         )
     registration_enabled = models.BooleanField(default=True)
-    # When empty, the global dates from SiteSettings are used.
+    # Empty start: open right away; empty end: open until it is closed by
+    # hand or the tournament starts.
     registration_start = models.DateTimeField(null=True, blank=True)
     registration_end = models.DateTimeField(null=True, blank=True)
     max_registrations = models.PositiveIntegerField(null=True, blank=True)
@@ -284,11 +282,8 @@ class Tournament(models.Model):
     def clean(self):
         validate_date_range(self.registration_start, self.registration_end)
 
-    def registration_window(self, site_settings=None):
-        site = site_settings or SiteSettings.load()
-        start = self.registration_start or site.registration_start
-        end = self.registration_end or site.registration_end
-        return start, end
+    def registration_window(self):
+        return self.registration_start, self.registration_end
 
     def active_registrations(self):
         return self.registrations.exclude(status='rejected')
@@ -304,7 +299,7 @@ class Tournament(models.Model):
             return False, 'Las inscripciones están deshabilitadas en general.'
         if not self.registration_enabled:
             return False, 'Las inscripciones de este torneo están cerradas.'
-        start, end = self.registration_window(site)
+        start, end = self.registration_window()
         now = timezone.now()
         if start and now < start:
             return False, 'Las inscripciones aún no empiezan.'

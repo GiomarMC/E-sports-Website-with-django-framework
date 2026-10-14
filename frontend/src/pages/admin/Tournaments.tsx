@@ -234,8 +234,10 @@ export function TournamentForm({ tournament, onClose }: { tournament: Tournament
           )}
         </Field>
         <div className="rounded-xl border border-white/[0.06] p-4 sm:col-span-2">
-          <p className="text-sm font-semibold">Fechas de inscripción propias</p>
-          <p className="mb-4 text-xs text-ink-400">Déjalas vacías para usar las fechas generales del evento.</p>
+          <p className="text-sm font-semibold">Fechas de inscripción</p>
+          <p className="mb-4 text-xs text-ink-400">
+            Sin inicio, abren de inmediato. Sin fin, siguen abiertas hasta que las cierres o el torneo pase a En curso.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Desde" error={errors.registration_start}>
               {(id) => (

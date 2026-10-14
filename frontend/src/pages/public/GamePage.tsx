@@ -9,6 +9,7 @@ import {
   Info,
   ListNumbers,
   Scroll,
+  Timer,
   TreeStructure,
   UsersThree,
 } from '@phosphor-icons/react'
@@ -30,6 +31,7 @@ import {
   formatDate,
   formatDay,
   formatMoney,
+  formatTime,
   playersLabel,
   stageStatusLabel,
   stageTypeLabel,
@@ -172,7 +174,7 @@ function GameHero({
         <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/85 to-ink-950/20" />
         <div className="absolute inset-0 bg-gradient-to-t from-ink-950 to-transparent" />
       </div>
-      <div className="relative mx-auto grid max-w-[1400px] gap-8 px-4 pt-16 pb-10 md:grid-cols-[1.4fr_1fr] md:px-8 md:pt-24">
+      <div className="relative mx-auto grid max-w-[1400px] gap-8 px-4 pt-16 pb-10 md:px-8 md:pt-24 lg:grid-cols-[1.2fr_1fr]">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ type: 'spring', stiffness: 110, damping: 20 }}>
           <div className="mb-4 flex flex-wrap gap-2">
             <Badge>{game.type_of_game === 'team' ? 'Equipos' : 'Individual'}</Badge>
@@ -209,23 +211,29 @@ function GameHero({
             )}
           </div>
         </motion.div>
-        {milestone && (
+        {milestone && tournament && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1, type: 'spring', stiffness: 110, damping: 20 }}
-            className="self-end rounded-2xl border border-white/10 bg-ink-950/60 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:p-6 md:justify-self-end"
+            className="self-end rounded-3xl border border-white/10 bg-ink-950/65 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl sm:w-fit sm:p-8 lg:justify-self-end"
           >
             <p
               className={cx(
-                'text-xs font-semibold uppercase tracking-[0.2em]',
-                milestone.kind === 'closes' ? 'text-warn' : milestone.kind === 'starts' ? 'text-win' : 'text-ink-300',
+                'flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em]',
+                milestone.kind === 'closes' ? 'text-warn' : milestone.kind === 'starts' ? 'text-win' : 'text-ink-200',
               )}
             >
+              <Timer size={18} weight="bold" />
               {milestone.label}
             </p>
-            <Countdown key={milestone.target} target={milestone.target} className="mt-4" />
-            <p className="mt-4 text-sm text-ink-400">{formatDate(milestone.target, true)}</p>
+            <Countdown key={milestone.target} target={milestone.target} size="lg" className="mt-5" />
+            <p className="mt-5 text-sm text-ink-300 first-letter:uppercase">
+              {formatDay(milestone.target)} · {formatTime(milestone.target)}
+            </p>
+            {milestone.kind !== 'starts' && (
+              <p className="mt-1 text-xs text-ink-400">El torneo empieza el {formatDate(tournament.start_date, true)}</p>
+            )}
           </motion.div>
         )}
       </div>
