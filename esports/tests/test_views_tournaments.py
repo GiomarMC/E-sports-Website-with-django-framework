@@ -414,6 +414,22 @@ class TournamentRegisterTestCase(APITestCase):
         self.assertTrue(registration.members.get().is_captain)
         self.assertEqual(registration.contact_phone, '912345678')
 
+    def test_register_without_game_account_id_returns_400(self):
+        # Arrange
+        members = member_payload(5)
+        del members[0]['game_account_id']
+        members[1]['game_account_id'] = ''
+
+        # Act
+        response = self.client.post(
+            self.url, self.multipart_payload(members)
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('game_account_id', response.data['members'][0])
+        self.assertIn('game_account_id', response.data['members'][1])
+
     def test_register_external_player_with_university(self):
         # Arrange
         members = member_payload(5)

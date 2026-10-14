@@ -433,6 +433,14 @@ class RegistrationMemberSerializer(serializers.ModelSerializer):
             'university', 'is_captain'
             ]
         read_only_fields = ['id']
+        # The admins need it to find the player in the game.
+        extra_kwargs = {'game_account_id': {
+            'required': True, 'allow_blank': False,
+            'error_messages': {
+                'required': 'Escribe el ID de la cuenta del juego.',
+                'blank': 'Escribe el ID de la cuenta del juego.',
+            },
+        }}
 
     def validate(self, data):
         university = data.get('university', '').strip()

@@ -188,6 +188,7 @@ def member_payload(count, captain_index=0, prefix='2026'):
             'full_name': fake.name(),
             'student_code': f"{prefix}{index:04d}",
             'nickname': f"nick{prefix}{index}",
+            'game_account_id': f"id{prefix}{index}",
             'is_captain': index == captain_index,
         }
         for index in range(count)

@@ -154,6 +154,7 @@ function RegistrationForm({
       if (!member.full_name.trim()) next[`m${index}.full_name`] = 'Requerido'
       if (!member.student_code.trim()) next[`m${index}.student_code`] = 'Requerido'
       if (!member.nickname.trim()) next[`m${index}.nickname`] = 'Requerido'
+      if (!member.game_account_id.trim()) next[`m${index}.game_account_id`] = 'Requerido'
       if (member.is_external && !member.university.trim()) next[`m${index}.university`] = 'Escribe su universidad.'
     })
     const codes = members.map((m) => m.student_code.trim().toUpperCase()).filter(Boolean)
@@ -344,12 +345,17 @@ function RegistrationForm({
                           />
                         )}
                       </Field>
-                      <Field label="ID de cuenta (opcional)" hint="Friend ID, Steam ID, tag, etc.">
+                      <Field
+                        label="ID de cuenta"
+                        hint="Friend ID, Steam ID, tag, etc."
+                        error={errors[`m${index}.game_account_id`]}
+                      >
                         {(id) => (
                           <Input
                             id={id}
                             value={member.game_account_id}
                             onChange={(e) => update(index, 'game_account_id', e.target.value)}
+                            invalid={!!errors[`m${index}.game_account_id`]}
                             maxLength={100}
                           />
                         )}
