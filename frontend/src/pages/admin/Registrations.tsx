@@ -5,12 +5,15 @@ import {
   Eye,
   EyeSlash,
   FilePdf,
+  ImageSquare,
   MagnifyingGlass,
+  PencilSimple,
+  Plus,
   Trash,
   Wallet,
   XCircle,
 } from '@phosphor-icons/react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Badge,
   Button,
@@ -29,11 +32,11 @@ import {
 } from '../../components/ui'
 import { useAuth } from '../../auth/AuthProvider'
 import { PageHeader } from '../../layouts/AdminLayout'
-import { api } from '../../lib/api'
+import { api, toFormData } from '../../lib/api'
 import { formatDate, formatMoney, registrationStatusLabel } from '../../lib/format'
-import { useApiMutation, useGames, useRegistrations, useTournaments } from '../../lib/queries'
+import { useApiMutation, useGames, useRegistrations, useTournament, useTournaments } from '../../lib/queries'
 import { PaymentMethodsPanel } from './PaymentMethods'
-import type { Registration, RegistrationStatus } from '../../lib/types'
+import type { Member, Registration, RegistrationStatus, Tournament } from '../../lib/types'
 
 export default function RegistrationsPage() {
   const [tab, setTab] = useState<'inscripciones' | 'pagos'>('inscripciones')
@@ -41,7 +44,7 @@ export default function RegistrationsPage() {
     <>
       <PageHeader
         title="Inscripciones"
-        description="Revisa el comprobante de pago de cada inscripción y confírmala o recházala. Las inscripciones no se pueden editar."
+        description="Revisa el comprobante de pago de cada inscripción y confírmala o recházala. También puedes corregir sus datos, logo e integrantes."
       />
       <div className="mb-6">
         <Tabs
@@ -190,6 +193,11 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
   const [reason, setReason] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [seed, setSeed] = useState('')
+  const [editingTeam, setEditingTeam] = useState(false)
+  // ``null``: new player; ``undefined``: dialog closed.
+  const [editingMember, setEditingMember] = useState<Member | null | undefined>(undefined)
+  const [removingMember, setRemovingMember] = useState<Member | null>(null)
+  const tournament = useTournament(registration?.tournament ?? 0).data
   const invalidate = [['registrations'], ['tournament'], ['tournaments']]
 
   const confirm = useApiMutation({
@@ -217,6 +225,12 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
     invalidate,
     success: 'Seed guardado',
   })
+  const removeMember = useApiMutation({
+    request: (member: Member) => api(`registrations/${registration!.id}/members/${member.id}/`, { method: 'DELETE' }),
+    invalidate,
+    success: 'Jugador quitado',
+    onSuccess: () => setRemovingMember(null),
+  })
   const remove = useApiMutation({
     request: (id: number) => api(`registrations/${id}/`, { method: 'DELETE' }),
     invalidate,
@@ -230,6 +244,8 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
   if (!registration) return <Modal open={false} onClose={onClose} title="">{null}</Modal>
 
   const voucherIsPdf = registration.voucher_is_pdf
+  const players = registration.members.length
+  const team = tournament?.type_of_game === 'team'
 
   return (
     <>
@@ -287,15 +303,25 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
               <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm">Motivo: {registration.rejection_reason}</p>
             )}
             <div>
-              <h3 className="mb-2 text-sm font-semibold text-ink-300">Integrantes</h3>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-ink-300">Integrantes</h3>
+                {tournament && players < tournament.max_players && (
+                  <Button variant="ghost" size="sm" icon={<Plus size={14} />} onClick={() => setEditingMember(null)}>
+                    Agregar jugador
+                  </Button>
+                )}
+              </div>
               <div className="scrollbar-thin overflow-x-auto rounded-xl border border-white/[0.06]">
-                <table className="w-full min-w-[520px] text-sm">
+                <table className="w-full min-w-[580px] text-sm">
                   <thead className="bg-ink-850 text-left text-xs text-ink-400">
                     <tr>
                       <th className="px-3 py-2 font-medium">Nick</th>
                       <th className="px-3 py-2 font-medium">Nombre</th>
                       <th className="px-3 py-2 font-medium">Código</th>
                       <th className="px-3 py-2 font-medium">ID cuenta</th>
+                      <th className="px-3 py-2">
+                        <span className="sr-only">Acciones</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.04]">
@@ -315,26 +341,58 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
                         </td>
                         <td className="px-3 py-2 font-mono text-ink-300">{member.student_code}</td>
                         <td className="px-3 py-2 text-ink-400">{member.game_account_id || '-'}</td>
+                        <td className="px-2 py-2">
+                          <span className="flex justify-end gap-1">
+                            <button
+                              onClick={() => setEditingMember(member)}
+                              className="grid size-8 place-items-center rounded-lg text-ink-400 transition hover:bg-white/5 hover:text-ink-100"
+                              aria-label={`Editar a ${member.nickname}`}
+                            >
+                              <PencilSimple size={16} />
+                            </button>
+                            {tournament && players > tournament.min_players && !(team && member.is_captain) && (
+                              <button
+                                onClick={() => setRemovingMember(member)}
+                                className="grid size-8 place-items-center rounded-lg text-ink-400 transition hover:bg-accent-soft hover:text-accent"
+                                aria-label={`Quitar a ${member.nickname}`}
+                              >
+                                <Trash size={16} />
+                              </button>
+                            )}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            {editingTeam ? (
+              <TeamDataForm registration={registration} team={team} onDone={() => setEditingTeam(false)} />
+            ) : (
               <div>
-                <dt className="text-xs text-ink-400">Correo</dt>
-                <dd className="break-all">{registration.contact_email}</dd>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-ink-300">{team ? 'Datos del equipo' : 'Contacto'}</h3>
+                  <Button variant="ghost" size="sm" icon={<PencilSimple size={14} />} onClick={() => setEditingTeam(true)}>
+                    Editar
+                  </Button>
+                </div>
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs text-ink-400">Correo</dt>
+                    <dd className="break-all">{registration.contact_email}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-400">Celular</dt>
+                    <dd>{registration.contact_phone || '-'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-ink-400">Código</dt>
+                    <dd className="truncate font-mono text-xs">{registration.code}</dd>
+                  </div>
+                </dl>
               </div>
-              <div>
-                <dt className="text-xs text-ink-400">Celular</dt>
-                <dd>{registration.contact_phone || '-'}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-ink-400">Código</dt>
-                <dd className="truncate font-mono text-xs">{registration.code}</dd>
-              </div>
-            </dl>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -413,6 +471,24 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
           </Field>
         </div>
       </ConfirmDialog>
+      {editingMember !== undefined && tournament && (
+        <MemberDialog
+          registration={registration}
+          tournament={tournament}
+          member={editingMember}
+          onClose={() => setEditingMember(undefined)}
+        />
+      )}
+      <ConfirmDialog
+        open={!!removingMember}
+        title="Quitar jugador"
+        description={`Se quitará a ${removingMember?.nickname ?? ''} del equipo y el monto a pagar se recalculará con los jugadores que queden.`}
+        confirmLabel="Quitar"
+        tone="danger"
+        loading={removeMember.isPending}
+        onConfirm={() => removingMember && removeMember.mutate(removingMember)}
+        onClose={() => setRemovingMember(null)}
+      />
       <ConfirmDialog
         open={deleting}
         title="Eliminar inscripción"
@@ -424,5 +500,219 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
         onClose={() => setDeleting(false)}
       />
     </>
+  )
+}
+
+/** Team name, logo and contact of a sent registration (for typos or a
+ * forgotten logo). */
+function TeamDataForm({ registration, team, onDone }: { registration: Registration; team: boolean; onDone: () => void }) {
+  const [teamName, setTeamName] = useState(registration.team_name)
+  const [email, setEmail] = useState(registration.contact_email)
+  const [phone, setPhone] = useState(registration.contact_phone)
+  const [logo, setLogo] = useState<File | null>(null)
+  const logoPreview = useMemo(() => (logo ? URL.createObjectURL(logo) : registration.logo), [logo, registration.logo])
+  const save = useApiMutation({
+    request: () =>
+      api(`registrations/${registration.id}/`, {
+        method: 'PATCH',
+        body: toFormData({
+          team_name: team ? teamName : undefined,
+          contact_email: email,
+          contact_phone: phone,
+          logo: logo ?? undefined,
+        }),
+      }),
+    invalidate: [['registrations'], ['tournament'], ['tournaments']],
+    success: 'Datos actualizados',
+    onSuccess: onDone,
+  })
+  const errors = save.error?.fields ?? {}
+
+  return (
+    <form
+      className="space-y-4 rounded-xl border border-white/[0.06] p-4"
+      onSubmit={(e) => {
+        e.preventDefault()
+        save.mutate()
+      }}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        {team && (
+          <Field label="Nombre del equipo" error={errors.team_name}>
+            {(id) => (
+              <Input id={id} value={teamName} onChange={(e) => setTeamName(e.target.value)} invalid={!!errors.team_name} maxLength={100} />
+            )}
+          </Field>
+        )}
+        {team && (
+          <Field label="Logo" error={errors.logo}>
+            {(id) => (
+              <label
+                htmlFor={id}
+                className="flex h-11 cursor-pointer items-center gap-3 rounded-xl border border-dashed border-white/15 px-3 text-sm text-ink-300 transition hover:border-accent/50"
+              >
+                {logoPreview ? <img src={logoPreview} alt="" className="size-7 rounded-md object-cover" /> : <ImageSquare size={20} />}
+                {logoPreview ? 'Cambiar' : 'Subir imagen'}
+                <input
+                  id={id}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  onChange={(e) => setLogo(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            )}
+          </Field>
+        )}
+        <Field label="Correo" error={errors.contact_email}>
+          {(id) => <Input id={id} type="email" value={email} onChange={(e) => setEmail(e.target.value)} invalid={!!errors.contact_email} />}
+        </Field>
+        <Field label="Celular del capitán" error={errors.contact_phone}>
+          {(id) => (
+            <Input id={id} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} invalid={!!errors.contact_phone} maxLength={20} />
+          )}
+        </Field>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onDone}>
+          Cancelar
+        </Button>
+        <Button type="submit" loading={save.isPending}>
+          Guardar
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+const emptyMember: Omit<Member, 'id'> = {
+  full_name: '',
+  student_code: '',
+  nickname: '',
+  game_account_id: '',
+  email: '',
+  phone: '',
+  is_external: false,
+  university: '',
+  is_captain: false,
+}
+
+/** Adds a player (``member`` null) or fixes one. The amount due follows the
+ * number of players. */
+function MemberDialog({
+  registration,
+  tournament,
+  member,
+  onClose,
+}: {
+  registration: Registration
+  tournament: Tournament
+  member: Member | null
+  onClose: () => void
+}) {
+  const team = tournament.type_of_game === 'team'
+  const [form, setForm] = useState<Omit<Member, 'id'>>(member ?? emptyMember)
+  const update = <K extends keyof Member>(key: K, value: Member[K]) => setForm((current) => ({ ...current, [key]: value }))
+  const save = useApiMutation({
+    request: () =>
+      member
+        ? api(`registrations/${registration.id}/members/${member.id}/`, { method: 'PATCH', body: form })
+        : api(`registrations/${registration.id}/members/`, { method: 'POST', body: form }),
+    invalidate: [['registrations'], ['tournament'], ['tournaments']],
+    success: member ? 'Jugador actualizado' : 'Jugador agregado',
+    onSuccess: onClose,
+  })
+  const errors = save.error?.fields ?? {}
+  const newTotal = Number(tournament.fee_per_player) * (registration.members.length + 1)
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={member ? `Editar a ${member.nickname}` : 'Agregar jugador'}
+      description={
+        member || Number(tournament.fee_per_player) === 0
+          ? registration.display_name
+          : `${registration.display_name} · el monto a pagar pasará a ${formatMoney(String(newTotal))}`
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button loading={save.isPending} onClick={() => save.mutate()}>
+            {member ? 'Guardar' : 'Agregar'}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Nombre completo" error={errors.full_name}>
+          {(id) => <Input id={id} value={form.full_name} onChange={(e) => update('full_name', e.target.value)} invalid={!!errors.full_name} />}
+        </Field>
+        <Field label="Código de estudiante" error={errors.student_code}>
+          {(id) => (
+            <Input
+              id={id}
+              value={form.student_code}
+              onChange={(e) => update('student_code', e.target.value)}
+              invalid={!!errors.student_code}
+              className="font-mono uppercase"
+              maxLength={20}
+            />
+          )}
+        </Field>
+        <Field label="Nick en el juego" error={errors.nickname}>
+          {(id) => <Input id={id} value={form.nickname} onChange={(e) => update('nickname', e.target.value)} invalid={!!errors.nickname} maxLength={50} />}
+        </Field>
+        <Field label="ID de cuenta" error={errors.game_account_id}>
+          {(id) => (
+            <Input
+              id={id}
+              value={form.game_account_id}
+              onChange={(e) => update('game_account_id', e.target.value)}
+              invalid={!!errors.game_account_id}
+              maxLength={100}
+            />
+          )}
+        </Field>
+      </div>
+      <div className="mt-4 space-y-3">
+        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm text-ink-300">
+          <input
+            type="checkbox"
+            checked={form.is_external}
+            onChange={(e) => update('is_external', e.target.checked)}
+            className="size-4 cursor-pointer accent-accent"
+          />
+          Viene de otra universidad
+        </label>
+        {form.is_external && (
+          <Field label="Universidad" error={errors.university}>
+            {(id) => (
+              <Input
+                id={id}
+                value={form.university}
+                onChange={(e) => update('university', e.target.value)}
+                invalid={!!errors.university}
+                maxLength={150}
+              />
+            )}
+          </Field>
+        )}
+        {team && !member?.is_captain && (
+          <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm text-ink-300">
+            <input
+              type="checkbox"
+              checked={form.is_captain}
+              onChange={(e) => update('is_captain', e.target.checked)}
+              className="size-4 cursor-pointer accent-accent"
+            />
+            Hacer capitán (reemplaza al capitán actual)
+          </label>
+        )}
+        {errors.is_captain && <p className="text-xs text-accent">{errors.is_captain}</p>}
+      </div>
+    </Modal>
   )
 }

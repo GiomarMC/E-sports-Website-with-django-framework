@@ -1,3 +1,7 @@
+import shutil
+import tempfile
+from decimal import Decimal
+
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -6,10 +10,19 @@ from esports.models import Registration
 from esports.tests.factories import (
     AdminGameFactory, AdminUserFactory, RegistrationFactory,
     RegistrationMemberFactory, SuperAdminFactory, TournamentFactory,
+    image_file,
 )
 
 
+MEDIA_ROOT = tempfile.mkdtemp()
+
+
 class RegistrationViewSetTestCase(APITestCase):
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
 
     def setUp(self):
         assignment = AdminGameFactory()
@@ -167,23 +180,53 @@ class RegistrationViewSetTestCase(APITestCase):
         self.registration.refresh_from_db()
         self.assertEqual(self.registration.seed, 1)
 
-    def test_registration_data_cannot_be_edited(self):
+    def test_patch_team_data(self):
         # Arrange
         self.client.force_authenticate(user=self.admin)
-        original_name = self.registration.team_name
-        original_email = self.registration.contact_email
 
         # Act
-        self.client.patch(
+        response = self.client.patch(
             self.detail_url,
-            {'team_name': 'Renamed', 'contact_email': 'new@unsa.edu.pe'},
+            {'team_name': ' Renamed ', 'contact_email': 'new@unsa.edu.pe',
+             'contact_phone': '987654321'},
             format='json',
         )
 
         # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.registration.refresh_from_db()
-        self.assertEqual(self.registration.team_name, original_name)
-        self.assertEqual(self.registration.contact_email, original_email)
+        self.assertEqual(self.registration.team_name, 'Renamed')
+        self.assertEqual(self.registration.contact_email, 'new@unsa.edu.pe')
+
+    def test_patch_logo(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        with self.settings(MEDIA_ROOT=MEDIA_ROOT):
+            response = self.client.patch(
+                self.detail_url, {'logo': image_file('logo.png')},
+                format='multipart',
+            )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.registration.refresh_from_db()
+        self.assertTrue(self.registration.logo.name.startswith('logos/'))
+
+    def test_patch_repeated_team_name_returns_400(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        RegistrationFactory(tournament=self.tournament, team_name='Taken')
+
+        # Act
+        response = self.client.patch(
+            self.detail_url, {'team_name': 'taken'}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('team_name', response.data)
 
     def test_put_is_not_allowed(self):
         # Arrange
@@ -377,3 +420,152 @@ class RegistrationLookupTestCase(APITestCase):
 
         # Assert
         self.assertEqual(response.data['results'], [])
+
+
+class RegistrationMembersTestCase(APITestCase):
+    """Admins add, fix or remove players of a sent registration."""
+
+    def setUp(self):
+        assignment = AdminGameFactory()  # Team game: 5 to 7 players.
+        self.admin = assignment.admin
+        self.tournament = TournamentFactory(game=assignment.game)
+        self.registration = RegistrationFactory(tournament=self.tournament)
+        self.captain = RegistrationMemberFactory(
+            registration=self.registration, is_captain=True
+        )
+        self.players = RegistrationMemberFactory.create_batch(
+            4, registration=self.registration
+        )
+        self.add_url = reverse(
+            'registrations-members', kwargs={'pk': self.registration.pk}
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def member_url(self, member):
+        return reverse('registrations-member', kwargs={
+            'pk': self.registration.pk, 'member_id': member.pk,
+        })
+
+    def new_player(self, **overrides):
+        return {
+            'full_name': 'Nuevo Jugador', 'student_code': 'ab123',
+            'nickname': 'nuevo', 'game_account_id': '12345', **overrides,
+        }
+
+    def test_add_member_updates_amount_due(self):
+        # Act
+        response = self.client.post(
+            self.add_url, self.new_player(), format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data['members']), 6)
+        self.assertTrue(self.registration.members.filter(
+            student_code='AB123').exists())
+        self.registration.refresh_from_db()
+        self.assertEqual(self.registration.amount_due, Decimal('30.00'))
+
+    def test_add_member_over_max_returns_400(self):
+        # Arrange
+        RegistrationMemberFactory.create_batch(
+            2, registration=self.registration
+        )
+
+        # Act
+        response = self.client.post(
+            self.add_url, self.new_player(), format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.registration.members.count(), 7)
+
+    def test_add_member_with_taken_code_returns_400(self):
+        # Arrange
+        other = RegistrationFactory(tournament=self.tournament)
+        RegistrationMemberFactory(registration=other, student_code='AB123')
+
+        # Act
+        response = self.client.post(
+            self.add_url, self.new_player(), format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('student_code', response.data)
+
+    def test_new_captain_replaces_the_old_one(self):
+        # Act
+        response = self.client.patch(
+            self.member_url(self.players[0]), {'is_captain': True},
+            format='json',
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.captain.refresh_from_db()
+        self.assertFalse(self.captain.is_captain)
+        self.assertEqual(
+            self.registration.members.filter(is_captain=True).count(), 1
+        )
+
+    def test_patch_member_keeps_other_fields(self):
+        # Arrange
+        player = self.players[0]
+        player.is_external = True
+        player.university = 'UCSM'
+        player.save()
+
+        # Act
+        response = self.client.patch(
+            self.member_url(player), {'nickname': 'fixed'}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        player.refresh_from_db()
+        self.assertEqual(player.nickname, 'fixed')
+        self.assertEqual(player.university, 'UCSM')
+
+    def test_remove_member(self):
+        # Arrange
+        RegistrationMemberFactory(registration=self.registration)
+
+        # Act
+        response = self.client.delete(self.member_url(self.players[0]))
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self.registration.members.count(), 5)
+
+    def test_remove_member_under_min_returns_400(self):
+        # Act
+        response = self.client.delete(self.member_url(self.players[0]))
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.registration.members.count(), 5)
+
+    def test_remove_captain_returns_400(self):
+        # Arrange
+        RegistrationMemberFactory(registration=self.registration)
+
+        # Act
+        response = self.client.delete(self.member_url(self.captain))
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_member_of_foreign_game_returns_404(self):
+        # Arrange
+        foreign = RegistrationMemberFactory()
+        url = reverse('registrations-member', kwargs={
+            'pk': foreign.registration.pk, 'member_id': foreign.pk,
+        })
+
+        # Act
+        response = self.client.patch(url, {'nickname': 'x'}, format='json')
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

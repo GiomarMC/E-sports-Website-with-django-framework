@@ -40,15 +40,15 @@ from esports.serializers import (
     AdminUpdateSerializer, AssignGamesSerializer, ChangePasswordSerializer,
     ContactInfoSerializer, DrawSerializer, GameCreateUpdateSerializer,
     GamePublicSerializer, GroupStandingsSerializer, MatchSerializer,
-    MediaContentSerializer, OrganizerContactSerializer,
-    PaymentMethodSerializer,
-    PublicRegistrationSerializer, RejectSerializer,
+    MediaContentSerializer, MemberEditSerializer, OrganizerContactSerializer,
+    PaymentMethodSerializer, PublicRegistrationSerializer, RejectSerializer,
     RegistrationCreateSerializer, RegistrationLookupSerializer,
     RegistrationSerializer,
     RegistrationStatusSerializer, ResetPasswordSerializer, ResultSerializer,
     VOUCHER_LINK_SECONDS, VOUCHER_SALT,
     ScheduleSerializer, SiteSettingsSerializer, StageDetailSerializer,
     StageSerializer, StreamSerializer, TournamentSerializer,
+    update_amount_due,
 )
 
 
@@ -530,7 +530,8 @@ class RegistrationViewSet(ActionPermissionMixin,
                           mixins.DestroyModelMixin,
                           viewsets.GenericViewSet):
     """Registrations management (game admins). New registrations are created
-    with ``POST /tournaments/{id}/register/`` and cannot be edited later."""
+    with ``POST /tournaments/{id}/register/``; later the admins can fix the
+    team data and its players."""
     serializer_class = RegistrationSerializer
     default_permissions = [IsGameAdmin]
     # ``voucher`` is checked with the signed link of the admin serializer:
@@ -540,7 +541,7 @@ class RegistrationViewSet(ActionPermissionMixin,
     }
     LOOKUP_MIN_LENGTH = 3
     LOOKUP_LIMIT = 20
-    # Registrations are final once sent: only PATCH (seed / is_active).
+    # Only PATCH: the members are edited through their own actions.
     http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
@@ -689,6 +690,53 @@ class RegistrationViewSet(ActionPermissionMixin,
             self.get_object(), 'rejected',
             serializer.validated_data.get('reason', '')
         )
+
+    @swagger_auto_schema(request_body=MemberEditSerializer)
+    @action(detail=True, methods=['post'])
+    def members(self, request, pk=None):
+        """Adds a player to the registration."""
+        registration = self.get_object()
+        serializer = MemberEditSerializer(
+            data=request.data, context={'registration': registration}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            self.get_serializer(self.get_object()).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @swagger_auto_schema(methods=['patch'], request_body=MemberEditSerializer)
+    @action(detail=True, methods=['patch', 'delete'],
+            url_path=r'members/(?P<member_id>[0-9]+)')
+    def member(self, request, pk=None, member_id=None):
+        """Fixes (PATCH) or removes (DELETE) a player of the
+        registration."""
+        registration = self.get_object()
+        member = get_object_or_404(registration.members, pk=member_id)
+        if request.method == 'DELETE':
+            game = registration.tournament.game
+            if registration.members.count() <= game.min_players:
+                raise ValidationError({'detail': (
+                    f"Este juego requiere al menos {game.min_players} "
+                    "jugadores."
+                )})
+            if member.is_captain and game.is_team_game:
+                raise ValidationError({'detail': (
+                    'No puedes quitar al capitán: marca antes a otro '
+                    'jugador como capitán.'
+                )})
+            with transaction.atomic():
+                member.delete()
+                update_amount_due(registration)
+        else:
+            serializer = MemberEditSerializer(
+                member, data=request.data, partial=True,
+                context={'registration': registration},
+            )
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        return Response(self.get_serializer(self.get_object()).data)
 
     @action(detail=True, methods=['post'])
     def enable(self, request, pk=None):

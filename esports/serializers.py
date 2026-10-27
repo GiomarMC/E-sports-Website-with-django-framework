@@ -443,8 +443,14 @@ class RegistrationMemberSerializer(serializers.ModelSerializer):
         }}
 
     def validate(self, data):
-        university = data.get('university', '').strip()
-        if not data.get('is_external'):
+        # A partial update (admins fixing one field) keeps the saved values.
+        is_external = data.get(
+            'is_external', getattr(self.instance, 'is_external', False)
+        )
+        university = data.get(
+            'university', getattr(self.instance, 'university', '')
+        ).strip()
+        if not is_external:
             university = ''
         elif not university:
             raise serializers.ValidationError(
@@ -452,6 +458,81 @@ class RegistrationMemberSerializer(serializers.ModelSerializer):
             )
         data['university'] = university
         return data
+
+
+def validate_captain_phone(value):
+    # Required: the organizers reach the captain by phone / WhatsApp (the
+    # email is rarely read).
+    value, error = normalize_contact('phone', value)
+    if error:
+        raise serializers.ValidationError(
+            'Escribe el celular del capitán (9 dígitos).'
+            if not value else error
+        )
+    return value
+
+
+def update_amount_due(registration):
+    """The fee follows the number of players when the admins add or
+    remove one."""
+    # Not ``registration.members``: it may be prefetched (stale count).
+    players = RegistrationMember.objects.filter(
+        registration=registration
+    ).count()
+    registration.amount_due = registration.tournament.calculate_fee(players)
+    registration.save(update_fields=['amount_due'])
+
+
+class MemberEditSerializer(RegistrationMemberSerializer):
+    """Admins add, fix or remove the players of a sent registration (a
+    forgotten player, a typo). The team keeps the size limits of the game
+    and a single captain."""
+
+    def validate_student_code(self, value):
+        value = value.strip().upper()
+        registration = self.context['registration']
+        taken = RegistrationMember.objects.filter(
+            registration__tournament=registration.tournament,
+            student_code=value,
+        ).exclude(registration__status='rejected')
+        if self.instance:
+            taken = taken.exclude(pk=self.instance.pk)
+        if taken.exists():
+            raise serializers.ValidationError(
+                'Ese código ya está inscrito en este torneo.'
+            )
+        return value
+
+    def validate(self, data):
+        data = super().validate(data)
+        registration = self.context['registration']
+        game = registration.tournament.game
+        if (self.instance is None
+                and registration.members.count() >= game.max_players):
+            raise serializers.ValidationError({'detail': (
+                f"Este juego permite como máximo {game.max_players} "
+                "jugadores."
+            )})
+        if not game.is_team_game:
+            data['is_captain'] = True
+        elif (self.instance and self.instance.is_captain
+                and data.get('is_captain') is False):
+            raise serializers.ValidationError({'is_captain': (
+                'El equipo necesita un capitán: marca a otro jugador como '
+                'capitán.'
+            )})
+        return data
+
+    @transaction.atomic
+    def save(self, **kwargs):
+        registration = self.context['registration']
+        member = super().save(registration=registration, **kwargs)
+        if member.is_captain and registration.tournament.game.is_team_game:
+            registration.members.exclude(pk=member.pk).update(
+                is_captain=False
+            )
+        update_amount_due(registration)
+        return member
 
 
 class PublicMemberSerializer(serializers.ModelSerializer):
@@ -483,15 +564,7 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         return validate_file_content(validate_file_size(value))
 
     def validate_contact_phone(self, value):
-        # Required: the organizers reach the captain by phone / WhatsApp
-        # (the email is rarely read).
-        value, error = normalize_contact('phone', value)
-        if error:
-            raise serializers.ValidationError(
-                'Escribe el celular del capitán (9 dígitos).'
-                if not value else error
-            )
-        return value
+        return validate_captain_phone(value)
 
     def validate(self, data):
         tournament = self.context['tournament']
@@ -564,8 +637,9 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
 
 
 class RegistrationSerializer(serializers.ModelSerializer):
-    """Full data, only for admins. Read only except ``seed`` and
-    ``is_active``."""
+    """Full data, only for admins. They can fix the team data (name, logo,
+    contact) and order (seed) or enable/disable it; the players change
+    through the members actions."""
     members = RegistrationMemberSerializer(many=True, read_only=True)
     display_name = serializers.CharField(read_only=True)
     tournament_name = serializers.CharField(
@@ -585,12 +659,35 @@ class RegistrationSerializer(serializers.ModelSerializer):
             'is_active', 'seed', 'code', 'created_at', 'reviewed_at',
             'reviewed_by', 'members'
             ]
-        # A registration cannot be edited once it is sent: admins can only
-        # order (seed) and enable/disable it; the status changes through
-        # the confirm/reject actions.
+        # The status changes through the confirm/reject actions.
         read_only_fields = [
-            f for f in fields if f not in ['seed', 'is_active']
+            f for f in fields if f not in [
+                'team_name', 'logo', 'contact_email', 'contact_phone',
+                'seed', 'is_active'
             ]
+            ]
+
+    def validate_team_name(self, value):
+        registration = self.instance
+        if not registration.tournament.game.is_team_game:
+            return ''
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                'El nombre del equipo es obligatorio.'
+            )
+        if registration.tournament.active_registrations().filter(
+                team_name__iexact=value).exclude(pk=registration.pk).exists():
+            raise serializers.ValidationError(
+                'Ya existe un equipo con ese nombre.'
+            )
+        return value
+
+    def validate_logo(self, value):
+        return validate_file_content(validate_file_size(value))
+
+    def validate_contact_phone(self, value):
+        return validate_captain_phone(value)
 
     def get_voucher(self, obj):
         # Relative: the same origin serves the API and the frontend.
