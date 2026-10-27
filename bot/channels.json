@@ -1,9 +1,10 @@
 {
-  "_help": "Canal de Discord por juego y evento. El juego se reconoce si su nombre en la página contiene alguno de 'match'. Los canales van sin emoji (avisos-l4d = 📢・avisos-l4d). Un juego que no aparece aquí publica en 'fallback'.",
+  "_help": "Canal de Discord por juego y evento. El juego se reconoce si su nombre en la página contiene alguno de 'match'. Los canales van sin emoji (avisos-l4d = 📢・avisos-l4d). 'art' es el fondo de sus tarjetas VS (bot/assets/art). Un juego que no aparece aquí publica en 'fallback'.",
   "fallback": "anuncios",
   "games": [
     {
       "match": ["left 4 dead", "l4d"],
+      "art": "left-4-dead.jpg",
       "events": {
         "match.scheduled": "avisos-l4d",
         "match.started": "avisos-l4d",
@@ -13,6 +14,7 @@
     },
     {
       "match": ["dota"],
+      "art": "dota-2.jpg",
       "events": {
         "match.scheduled": "avisos-dota",
         "match.started": "avisos-dota",
@@ -22,6 +24,7 @@
     },
     {
       "match": ["brawl"],
+      "art": "brawl-stars.jpg",
       "events": {
         "match.scheduled": "avisos-brawl",
         "match.started": "avisos-brawl",
@@ -31,6 +34,7 @@
     },
     {
       "match": ["clash"],
+      "art": "clash-royale.jpg",
       "events": {
         "match.scheduled": "avisos-clash",
         "match.started": "avisos-clash",

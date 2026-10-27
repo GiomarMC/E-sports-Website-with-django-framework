@@ -19,6 +19,7 @@ import time
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import cards
 import templates
 from discord_api import Discord, DiscordError
 
@@ -49,12 +50,20 @@ class Router:
         self.fallback = config.get('fallback')
         self.games = config.get('games', [])
 
-    def channel(self, event, game_name):
+    def game(self, game_name):
         name = (game_name or '').lower()
-        for game in self.games:
-            if any(word.lower() in name for word in game['match']):
-                return game['events'].get(event, self.fallback)
-        return self.fallback
+        return next((
+            game for game in self.games
+            if any(word.lower() in name for word in game['match'])
+        ), {})
+
+    def channel(self, event, game_name):
+        return self.game(game_name).get('events', {}).get(
+            event, self.fallback
+        )
+
+    def art(self, game_name):
+        return self.game(game_name).get('art')
 
 
 class Bot:
@@ -74,14 +83,34 @@ class Bot:
                 self.seen.popitem(last=False)
             return True
 
+    def images(self, game, specs):
+        """The VS cards of a message. One that fails is left out (the
+        message still goes, without that image)."""
+        files = []
+        for name, match, mode in specs:
+            try:
+                files.append(
+                    (name, cards.render(match, mode, self.router.art(game)))
+                )
+            except Exception:
+                logger.exception('Tarjeta %s', name)
+        return files
+
     def publish(self, event, data):
-        for game, body in templates.render(event, data):
+        for game, body, specs in templates.render(event, data):
             channel = self.router.channel(event, game)
             if not channel:
                 logger.warning('%s: sin canal para %s', event, game)
                 continue
+            files = self.images(game, specs)
+            sent = {name for name, _ in files}
+            for item in body['embeds']:
+                image = item.get('image', {}).get('url', '')
+                if image.startswith('attachment://') and \
+                        image[len('attachment://'):] not in sent:
+                    del item['image']
             try:
-                self.discord.send(channel, body)
+                self.discord.send(channel, body, files)
                 logger.info('%s publicado en #%s', event, channel)
             except DiscordError as error:
                 logger.error('%s: %s', event, error)

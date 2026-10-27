@@ -10,13 +10,15 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from unittest import mock
 
+import cards
 import templates
 from app import Bot, Router, make_handler, valid_signature
+from discord_api import multipart
 
 SECRET = 'test-secret'
 CONFIG = {
     'fallback': 'anuncios',
-    'games': [{'match': ['left 4 dead'], 'events': {
+    'games': [{'match': ['left 4 dead'], 'art': 'left-4-dead.jpg', 'events': {
         'match.started': 'avisos-l4d', 'match.result': 'resultados-l4d',
     }}],
 }
@@ -75,12 +77,14 @@ class SignatureTest(unittest.TestCase):
 class TemplatesTest(unittest.TestCase):
 
     def test_match_started(self):
-        [(game, body)] = templates.render('match.started', match())
+        [(game, body, specs)] = templates.render('match.started', match())
         self.assertEqual(game, 'Left 4 Dead 2')
         embed = body['embeds'][0]
         self.assertIn('**Los niños** vs **chinitos**', embed['description'])
         self.assertIn('Grupo A', embed['description'])
-        self.assertEqual(embed['thumbnail']['url'], 'https://e.com/a.png')
+        self.assertEqual(embed['image']['url'], 'attachment://live-1.jpg')
+        self.assertEqual([(n, m) for n, _, m in specs],
+                         [('live-1.jpg', 'live')])
         button = body['components'][0]['components'][0]
         self.assertEqual(button['url'], 'https://twitch.tv/semcom')
 
@@ -91,8 +95,9 @@ class TemplatesTest(unittest.TestCase):
             draw=False, corrected=False,
         )
         data['winner'], data['losers'] = data['teams'][0], [data['teams'][1]]
-        [(_, body)] = templates.render('match.result', data)
+        [(_, body, specs)] = templates.render('match.result', data)
         embed = body['embeds'][0]
+        self.assertEqual(specs[0][2], 'result')
         self.assertEqual(embed['title'],
                          '🏆 Victoria de Los niños sobre chinitos')
         self.assertIn('**Los niños** 2 – **chinitos** 1',
@@ -101,26 +106,75 @@ class TemplatesTest(unittest.TestCase):
     def test_corrected_draw(self):
         data = match(teams=[team(7, 'A', 1), team(9, 'B', 1)], draw=True,
                      corrected=True, winner=None, losers=[])
-        [(_, body)] = templates.render('match.result', data)
+        [(_, body, _)] = templates.render('match.result', data)
         self.assertEqual(body['embeds'][0]['title'],
                          '✏️ Resultado corregido · 🤝 Empate')
 
     def test_schedule_splits_long_lists(self):
-        matches = [match(id=n, rescheduled=False) for n in range(20)]
-        [(game, body)] = templates.render(
+        # A card per match, 10 per message (the Discord limit).
+        matches = [match(id=n, rescheduled=False) for n in range(12)]
+        first, second = templates.render(
             'match.scheduled', {'matches': matches}
         )
-        self.assertEqual(game, 'Left 4 Dead 2')
-        self.assertEqual(len(body['embeds']), 2)
-        self.assertIn('<t:1793235600:F>', body['embeds'][0]['description'])
+        self.assertEqual(first[0], 'Left 4 Dead 2')
+        self.assertEqual(len(first[1]['embeds']), 10)
+        self.assertEqual(len(first[2]), 10)
+        self.assertEqual(len(second[1]['embeds']), 2)
+        self.assertIn('title', first[1]['embeds'][0])
+        self.assertNotIn('title', first[1]['embeds'][1])
+        self.assertIn('<t:1793235600:F>',
+                      first[1]['embeds'][0]['description'])
 
     def test_team_to_be_decided(self):
         data = match(teams=[team(None, None), team(9, 'chinitos')])
-        [(_, body)] = templates.render('match.started', data)
+        [(_, body, _)] = templates.render('match.started', data)
         self.assertIn('**Por definir**', body['embeds'][0]['description'])
 
     def test_unknown_event(self):
         self.assertEqual(templates.render('ping', {}), [])
+
+
+@mock.patch('cards.fetch_logo', return_value=None)
+class CardsTest(unittest.TestCase):
+
+    def test_every_mode_renders_a_jpeg(self, fetch_logo):
+        data = match(teams=[team(7, 'Los niños', 2), team(9, 'chinitos', 1)])
+        data['winner'] = data['teams'][0]
+        for mode in ('scheduled', 'live', 'result'):
+            image = cards.render(data, mode, 'left-4-dead.jpg')
+            self.assertEqual(image[:2], b'\xff\xd8')
+
+    def test_long_names_fit_in_two_lines(self, fetch_logo):
+        from PIL import Image, ImageDraw
+        draw = ImageDraw.Draw(Image.new('RGB', (10, 10)))
+        face, lines = cards.fit_name(
+            draw, 'equipoAlfaBuenaMaravillaOndaDinamitaEscuadronLobo'
+        )
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(''.join(lines),
+                         'equipoAlfaBuenaMaravillaOndaDinamitaEscuadronLobo')
+        for line in lines:
+            self.assertLessEqual(draw.textlength(line, font=face),
+                                 cards.NAME_WIDTH)
+
+    def test_date_in_peru_time(self, fetch_logo):
+        self.assertEqual(cards.when('2026-10-30T00:00:00+00:00'),
+                         'JUEVES 29 OCT · 7:00 PM')
+        self.assertEqual(cards.when(None), 'FECHA Y HORA POR CONFIRMAR')
+
+    def test_unknown_art_and_team_to_be_decided(self, fetch_logo):
+        data = match(teams=[team(None, None)])
+        self.assertTrue(cards.render(data, 'scheduled', 'missing.jpg'))
+
+
+class MultipartTest(unittest.TestCase):
+
+    def test_payload_and_files(self):
+        data, content_type = multipart({'a': 1}, [('live-1.jpg', b'IMG')])
+        boundary = content_type.split('boundary=')[1]
+        self.assertIn(b'name="payload_json"', data)
+        self.assertIn(b'name="files[0]"; filename="live-1.jpg"', data)
+        self.assertTrue(data.endswith(f'--{boundary}--\r\n'.encode()))
 
 
 class RouterTest(unittest.TestCase):
@@ -133,12 +187,17 @@ class RouterTest(unittest.TestCase):
                          'anuncios')
         self.assertEqual(router.channel('match.result', 'Valorant'),
                          'anuncios')
+        self.assertEqual(router.art('Left 4 Dead 2'), 'left-4-dead.jpg')
+        self.assertIsNone(router.art('Valorant'))
 
 
 class ServerTest(unittest.TestCase):
     """The real HTTP server with Discord replaced by a mock."""
 
     def setUp(self):
+        patcher = mock.patch('cards.fetch_logo', return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.discord = mock.Mock()
         self.bot = Bot(SECRET, self.discord, Router(CONFIG))
         self.server = ThreadingHTTPServer(
@@ -171,9 +230,20 @@ class ServerTest(unittest.TestCase):
                             'data': match()})
         self.bot.queue.join()
         self.assertEqual(status, 202)
-        channel, body = self.discord.send.call_args.args
+        channel, body, files = self.discord.send.call_args.args
         self.assertEqual(channel, 'avisos-l4d')
         self.assertIn('Comenzó', body['embeds'][0]['title'])
+        [(name, image)] = files
+        self.assertEqual(name, 'live-1.jpg')
+        self.assertEqual(image[:2], b'\xff\xd8')
+
+    def test_message_goes_without_a_card_that_fails(self):
+        with mock.patch('cards.render', side_effect=OSError('sin fuente')):
+            self.post({'id': 'e', 'event': 'match.started', 'data': match()})
+            self.bot.queue.join()
+        _, body, files = self.discord.send.call_args.args
+        self.assertEqual(files, [])
+        self.assertNotIn('image', body['embeds'][0])
 
     def test_retry_of_the_site_is_posted_once(self):
         payload = {'id': 'b', 'event': 'match.started', 'data': match()}

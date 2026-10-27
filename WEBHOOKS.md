@@ -12,10 +12,13 @@ recibe, pausarse o probarse con el botón **Probar**.
 
 ## El bot de Discord del evento
 
-El repo trae un bot listo en `bot/` (solo librería estándar de Python). Corre
+El repo trae un bot listo en `bot/` (Python, con Pillow para las imágenes). Corre
 como el contenedor `bot` en el mismo servidor: el sitio le avisa por la red
 interna (`http://bot:8080/events`, sin puerto público) y él publica en
-Discord con el token del bot. Las plantillas están en `bot/templates.py` y el
+Discord con el token del bot. Cada aviso de un match lleva su **tarjeta VS**
+(logos, nombres, fecha o marcador sobre el arte del juego), que dibuja
+`bot/cards.py` con las fuentes y fondos de `bot/assets`. Las plantillas de
+texto están en `bot/templates.py` y el
 canal de cada juego y evento en `bot/channels.json` (sin emoji:
 `avisos-l4d` = `📢・avisos-l4d`).
 

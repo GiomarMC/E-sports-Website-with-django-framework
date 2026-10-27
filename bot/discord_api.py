@@ -6,6 +6,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 
 API = 'https://discord.com/api/v10'
 TEXT_CHANNELS = (0, 5)  # text and announcement channels
@@ -29,13 +30,18 @@ class Discord:
         self.channels = {}
         self.lock = threading.Lock()
 
-    def call(self, method, path, body=None):
+    def call(self, method, path, body=None, files=()):
+        """``files``: [(name, bytes)] uploaded with the message (images
+        that the embeds show with attachment://name)."""
+        if files:
+            data, content_type = multipart(body, files)
+        else:
+            data = json.dumps(body).encode() if body is not None else None
+            content_type = 'application/json'
         request = urllib.request.Request(
-            API + path, method=method,
-            data=json.dumps(body).encode() if body is not None else None,
-            headers={
+            API + path, method=method, data=data, headers={
                 'Authorization': f'Bot {self.token}',
-                'Content-Type': 'application/json',
+                'Content-Type': content_type,
                 'User-Agent': USER_AGENT,
             })
         for _ in range(5):
@@ -68,10 +74,35 @@ class Discord:
                 self.load_channels()
             return self.channels.get(key)
 
-    def send(self, channel, body):
+    def send(self, channel, body, files=()):
         channel_id = self.channel_id(channel)
         if channel_id is None:
             raise DiscordError(f'No existe el canal "{channel}"')
         # Never ping @everyone or roles from data written in the site.
         message = {**body, 'allowed_mentions': {'parse': []}}
-        return self.call('POST', f'/channels/{channel_id}/messages', message)
+        if files:
+            message['attachments'] = [
+                {'id': index, 'filename': name}
+                for index, (name, _) in enumerate(files)
+            ]
+        return self.call(
+            'POST', f'/channels/{channel_id}/messages', message, files
+        )
+
+
+def multipart(body, files):
+    boundary = uuid.uuid4().hex
+    parts = [
+        f'--{boundary}\r\nContent-Disposition: form-data; '
+        f'name="payload_json"\r\nContent-Type: application/json\r\n\r\n'
+        .encode() + json.dumps(body).encode() + b'\r\n'
+    ]
+    for index, (name, content) in enumerate(files):
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; '
+            f'name="files[{index}]"; filename="{name}"\r\n'
+            f'Content-Type: image/jpeg\r\n\r\n'.encode()
+            + content + b'\r\n'
+        )
+    parts.append(f'--{boundary}--\r\n'.encode())
+    return b''.join(parts), f'multipart/form-data; boundary={boundary}'

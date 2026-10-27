@@ -47,7 +47,7 @@ services:
     build: ./bot
     restart: unless-stopped
     env_file: ${ENV_FILE:-.env}
-    mem_limit: 96m
+    mem_limit: 160m
 
   web:
     build:

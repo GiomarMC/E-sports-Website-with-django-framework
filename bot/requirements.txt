@@ -1,0 +1,2 @@
+# Runtime dependencies of the bot, pinned (same Pillow as the backend).
+pillow==12.3.0

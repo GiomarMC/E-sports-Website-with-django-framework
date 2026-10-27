@@ -1,6 +1,7 @@
 """Discord messages for each event of the site (see WEBHOOKS.md). Every
-function returns a list of (game name, message body): the router picks the
-channel of each game."""
+function returns a list of (game name, message body, cards): the router
+picks the channel of each game and the cards are the VS images
+(file name, match, mode) the message shows as attachments."""
 import os
 from collections import defaultdict
 from datetime import datetime
@@ -14,8 +15,7 @@ WARN = 0xE2A336
 WIN = 0x3FB27F
 MUTED = 0x8B8B96
 
-# Discord limits: 10 embeds per message, keep the lists readable.
-MATCHES_PER_EMBED = 15
+# Discord limit: 10 embeds (and images) per message.
 EMBEDS_PER_MESSAGE = 10
 
 
@@ -60,22 +60,22 @@ def buttons(*links):
     return [{'type': 1, 'components': items}] if items else []
 
 
-def embed(title, description, color, thumbnail=None, fields=None):
+def embed(title, description, color, card=None):
+    """``card``: file name of the attached VS image shown in the embed."""
     body = {
-        'title': title[:256],
         'description': description[:4096],
         'color': color,
         'footer': {'text': EVENT_NAME},
     }
-    if thumbnail:
-        body['thumbnail'] = {'url': thumbnail}
-    if fields:
-        body['fields'] = fields
+    if title:
+        body['title'] = title[:256]
+    if card:
+        body['image'] = {'url': f'attachment://{card}'}
     return body
 
 
-def first_logo(teams):
-    return next((t['logo'] for t in teams if t.get('logo')), None)
+def card_name(match, mode):
+    return f"{mode}-{match['id']}.jpg"
 
 
 def schedule_url(match):
@@ -85,33 +85,35 @@ def schedule_url(match):
 # --------------------------------------------------------------- events
 
 def match_started(data):
+    card = card_name(data, 'live')
     body = {
         'embeds': [embed(
             '🔴 ¡Comenzó el enfrentamiento!',
-            f"{versus(data['teams'])}\n{context(data)}",
-            ACCENT, first_logo(data['teams']),
+            f"{versus(data['teams'])}\n{context(data)}", ACCENT, card,
         )],
         'components': buttons(
             ('Ver transmisión', watch_url(data)),
             ('Página del juego', data['game'].get('url')),
         ),
     }
-    return [(data['game']['name'], body)]
+    return [(data['game']['name'], body, [(card, data, 'live')])]
 
 
 def stream_live(data):
     stream, match, game = data['stream'], data.get('match'), data.get('game')
     lines = [f"**{stream['title']}**"]
+    cards = []
     if match:
         lines += [versus(match['teams']), context(match)]
+        cards.append((card_name(match, 'live'), match, 'live'))
     body = {
         'embeds': [embed(
             '📺 ¡Estamos en vivo!', '\n'.join(lines), ACCENT,
-            first_logo(match['teams']) if match else None,
+            cards[0][0] if cards else None,
         )],
         'components': buttons(('Ver transmisión', stream['url'])),
     }
-    return [(game['name'] if game else None, body)]
+    return [(game['name'] if game else None, body, cards)]
 
 
 def match_result(data):
@@ -137,22 +139,21 @@ def match_result(data):
         score = ' – '.join(
             f"**{team_name(t)}** {t.get('score', 0)}" for t in teams
         )
-    winner = data.get('winner') or {}
+    card = card_name(data, 'result')
     body = {
         'embeds': [embed(
             title, f'{score}\n{context(data)}',
-            MUTED if data['draw'] else WIN,
-            winner.get('logo'),
+            MUTED if data['draw'] else WIN, card,
         )],
         'components': buttons(
             ('Ver tabla y llaves', data['game'].get('url')),
         ),
     }
-    return [(data['game']['name'], body)]
+    return [(data['game']['name'], body, [(card, data, 'result')])]
 
 
 def match_scheduled(data):
-    """One message per game with every match, split to fit the limits."""
+    """One embed with its VS card per match, up to 10 per message."""
     by_game = defaultdict(list)
     for match in data['matches']:
         by_game[match['game']['name']].append(match)
@@ -164,27 +165,24 @@ def match_scheduled(data):
             '📅 Partida programada' if len(matches) == 1
             else '📅 Partidas programadas'
         )
-        chunks = [
-            matches[i:i + MATCHES_PER_EMBED]
-            for i in range(0, len(matches), MATCHES_PER_EMBED)
-        ]
-        embeds = []
-        for index, chunk in enumerate(chunks):
-            lines = [
-                f"{when(m['scheduled_at'])}\n{versus(m['teams'])}"
-                f" · {context(m)}" for m in chunk
-            ]
-            embeds.append(embed(
-                title if index == 0 else f'{title} (cont.)',
-                '\n\n'.join(lines), WARN,
-            ))
-        for i in range(0, len(embeds), EMBEDS_PER_MESSAGE):
+        for start in range(0, len(matches), EMBEDS_PER_MESSAGE):
+            chunk = matches[start:start + EMBEDS_PER_MESSAGE]
+            embeds, cards = [], []
+            for match in chunk:
+                card = card_name(match, 'scheduled')
+                embeds.append(embed(
+                    title if not embeds and start == 0 else '',
+                    f"{when(match['scheduled_at'])}\n"
+                    f"{versus(match['teams'])} · {context(match)}",
+                    WARN, card,
+                ))
+                cards.append((card, match, 'scheduled'))
             out.append((game, {
-                'embeds': embeds[i:i + EMBEDS_PER_MESSAGE],
+                'embeds': embeds,
                 'components': buttons(
-                    ('Ver cronograma', schedule_url(matches[0])),
+                    ('Ver cronograma', schedule_url(chunk[0])),
                 ),
-            }))
+            }, cards))
     return out
 
 
