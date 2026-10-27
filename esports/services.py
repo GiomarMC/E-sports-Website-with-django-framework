@@ -13,7 +13,7 @@ from datetime import timedelta
 from django.db import transaction
 
 from .models import (
-    Match, MatchParticipant, Stage, StageGroup, StageParticipant,
+    Match, MatchParticipant, Stage, StageGroup, StageParticipant, Stream,
 )
 
 
@@ -604,6 +604,7 @@ def record_result(match, scores=None, winner_id=None, placements=None,
     match.winner = winner
     match.status = 'completed'
     match.save(update_fields=['winner', 'status', 'updated_at'])
+    sync_match_streams(match)
 
     if match.next_match_id and winner_changed:
         place_in_slot(match.next_match, match.next_match_slot, winner)
@@ -642,8 +643,16 @@ def reset_result(match):
     match.winner = None
     match.status = 'scheduled'
     match.save(update_fields=['winner', 'status', 'updated_at'])
+    sync_match_streams(match)
     update_progress(match.stage)
     return match
+
+
+def sync_match_streams(match):
+    """The streams linked to a match follow it: live while the match is
+    live, off when it ends or goes back to scheduled. Streams without a
+    match are still turned on and off by hand."""
+    Stream.objects.filter(match=match).update(is_live=match.status == 'live')
 
 
 def update_progress(stage):

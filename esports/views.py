@@ -949,6 +949,12 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         )
         serializer.save()
 
+    def perform_update(self, serializer):
+        old_status = serializer.instance.status
+        match = serializer.save()
+        if match.status != old_status:
+            services.sync_match_streams(match)
+
     def perform_destroy(self, instance):
         if instance.status == 'completed' and not instance.is_bye:
             raise ValidationError(
@@ -1028,13 +1034,21 @@ class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
             )
         check_game_permission(self.request.user, game)
 
-    def perform_create(self, serializer):
+    def save_stream(self, serializer):
         self.check_stream_game(serializer)
-        serializer.save()
+        # Linked to a match that is already being played: live right away.
+        match = serializer.validated_data.get('match')
+        extra = {}
+        if (match is not None and match.status == 'live'
+                and match != getattr(serializer.instance, 'match', None)):
+            extra['is_live'] = True
+        serializer.save(**extra)
+
+    def perform_create(self, serializer):
+        self.save_stream(serializer)
 
     def perform_update(self, serializer):
-        self.check_stream_game(serializer)
-        serializer.save()
+        self.save_stream(serializer)
 
 
 # ----------------------------------------------------------------- misc

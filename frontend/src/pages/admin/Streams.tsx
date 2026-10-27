@@ -45,7 +45,7 @@ export default function StreamsPage() {
     <>
       <PageHeader
         title="Streams"
-        description="Pega el link del canal de Twitch, Kick o YouTube. Activa “En vivo” cuando empiece la transmisión para destacarla en el sitio."
+        description="Pega el link del canal de Twitch, Kick o YouTube. Si la vinculas a un match, se pone en vivo sola cuando marcas el match “En vivo” y se apaga al registrar el resultado. Sin match, actívala a mano."
         actions={
           <Button icon={<Plus size={16} />} onClick={() => setEditing('new')}>
             Agregar stream
@@ -220,7 +220,10 @@ function StreamForm({ stream, onClose }: { stream: Stream | null; onClose: () =>
           </Field>
         </div>
         <label className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.06] p-4">
-          <span className="text-sm font-medium">Transmitiendo en vivo ahora</span>
+          <span>
+            <span className="block text-sm font-medium">Transmitiendo en vivo ahora</span>
+            {form.match && <span className="block text-xs text-ink-400">Automático: sigue el estado del match.</span>}
+          </span>
           <Toggle checked={form.is_live} onChange={(v) => set('is_live', v)} label="En vivo" />
         </label>
         {errors.detail && <p className="text-sm text-accent">{errors.detail}</p>}

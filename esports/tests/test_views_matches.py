@@ -298,6 +298,88 @@ class MatchViewSetTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_live_match_turns_its_streams_on(self):
+        # Arrange
+        stream = StreamFactory(game=self.game, match=self.semi)
+        other = StreamFactory(game=self.game)
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        response = self.client.patch(
+            self.detail_url, {'status': 'live'}, format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stream.refresh_from_db()
+        other.refresh_from_db()
+        self.assertTrue(stream.is_live)
+        self.assertFalse(other.is_live)
+
+    def test_match_back_to_scheduled_turns_its_streams_off(self):
+        # Arrange
+        self.semi.status = 'live'
+        self.semi.save()
+        stream = StreamFactory(game=self.game, match=self.semi, is_live=True)
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        self.client.patch(
+            self.detail_url, {'status': 'scheduled'}, format='json'
+        )
+
+        # Assert
+        stream.refresh_from_db()
+        self.assertFalse(stream.is_live)
+
+    def test_other_changes_keep_the_manual_live_state(self):
+        # Arrange
+        stream = StreamFactory(game=self.game, match=self.semi, is_live=True)
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        self.client.patch(
+            self.detail_url, {'notes': 'Retraso de 10 min'}, format='json'
+        )
+
+        # Assert
+        stream.refresh_from_db()
+        self.assertTrue(stream.is_live)
+
+    def test_result_turns_its_streams_off(self):
+        # Arrange
+        self.semi.status = 'live'
+        self.semi.save()
+        stream = StreamFactory(game=self.game, match=self.semi, is_live=True)
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        response = self.client.post(
+            self.result_url, self.result_payload(), format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        stream.refresh_from_db()
+        self.assertFalse(stream.is_live)
+
+    def test_stream_linked_to_live_match_starts_live(self):
+        # Arrange
+        self.semi.status = 'live'
+        self.semi.save()
+        self.client.force_authenticate(user=self.admin)
+
+        # Act
+        response = self.client.post(reverse('streams-list'), {
+            'title': 'Semifinal', 'platform': 'twitch',
+            'url': 'https://twitch.tv/semis', 'game': self.game.pk,
+            'match': self.semi.pk, 'is_live': False,
+        }, format='json')
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data['is_live'])
+
 
 class ManualMatchTestCase(APITestCase):
 
