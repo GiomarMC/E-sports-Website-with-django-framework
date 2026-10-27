@@ -57,7 +57,7 @@ export default function Home() {
 
       <div className="mx-auto max-w-[1400px] space-y-24 px-4 pt-16 md:px-8">
         <Registrations settings={settings} games={games.data ?? []} tournaments={tournaments.data ?? []} />
-        <LiveNow />
+        <LiveNow games={games.data ?? []} />
         <UpcomingMatches games={games.data ?? []} />
       </div>
     </>
@@ -220,22 +220,44 @@ function Registrations({
   )
 }
 
-function LiveNow() {
+// Several groups can play at once: every live stream is shown, but only a
+// few players are embedded so the page stays light.
+const MAX_LIVE_EMBEDS = 4
+
+function LiveNow({ games }: { games: Game[] }) {
   const { data: streams } = useStreams({ live: true })
-  const main = streams?.[0]
-  if (!main) return null
+  if (!streams?.length) return null
+  const [main] = streams
+  const shown = streams.slice(0, MAX_LIVE_EMBEDS)
+  const hidden = streams.length - shown.length
+  const gameName = (id: number | null) => games.find((g) => g.id === id)?.name
   return (
     <section>
       <SectionTitle
         eyebrow="En vivo"
-        title={main.title}
+        title={streams.length === 1 ? main.title : `${streams.length} transmisiones en vivo`}
         action={
           <Link to="/en-vivo" className="inline-flex items-center gap-2 text-sm font-medium text-ink-300 hover:text-ink-100">
-            <Broadcast size={16} /> Todas las transmisiones
+            <Broadcast size={16} /> {hidden > 0 ? `Ver las ${streams.length}` : 'Todas las transmisiones'}
           </Link>
         }
       />
-      <StreamEmbed stream={main} />
+      {streams.length === 1 ? (
+        <StreamEmbed stream={main} />
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2">
+          {shown.map((stream) => (
+            <div key={stream.id} className="min-w-0">
+              <StreamEmbed stream={stream} />
+              <div className="mt-3 flex min-w-0 items-center gap-2">
+                <Badge tone="live">Vivo</Badge>
+                <span className="truncate text-sm font-medium">{stream.title}</span>
+                {gameName(stream.game) && <span className="shrink-0 text-xs text-ink-400">{gameName(stream.game)}</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
