@@ -1,0 +1,42 @@
+{
+  "_help": "Canal de Discord por juego y evento. El juego se reconoce si su nombre en la página contiene alguno de 'match'. Los canales van sin emoji (avisos-l4d = 📢・avisos-l4d). Un juego que no aparece aquí publica en 'fallback'.",
+  "fallback": "anuncios",
+  "games": [
+    {
+      "match": ["left 4 dead", "l4d"],
+      "events": {
+        "match.scheduled": "avisos-l4d",
+        "match.started": "avisos-l4d",
+        "stream.live": "avisos-l4d",
+        "match.result": "resultados-l4d"
+      }
+    },
+    {
+      "match": ["dota"],
+      "events": {
+        "match.scheduled": "avisos-dota",
+        "match.started": "avisos-dota",
+        "stream.live": "avisos-dota",
+        "match.result": "resultados-dota"
+      }
+    },
+    {
+      "match": ["brawl"],
+      "events": {
+        "match.scheduled": "avisos-brawl",
+        "match.started": "avisos-brawl",
+        "stream.live": "avisos-brawl",
+        "match.result": "resultados-brawl"
+      }
+    },
+    {
+      "match": ["clash"],
+      "events": {
+        "match.scheduled": "avisos-clash",
+        "match.started": "avisos-clash",
+        "stream.live": "avisos-clash",
+        "match.result": "resultados-clash"
+      }
+    }
+  ]
+}

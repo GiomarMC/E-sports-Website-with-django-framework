@@ -41,6 +41,14 @@ services:
       start_period: 40s
       retries: 5
 
+  # Discord bot: receives the webhooks of the backend through the internal
+  # network (http://bot:8080/events) and posts them. No public port.
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    mem_limit: 96m
+
   web:
     build:
       context: .

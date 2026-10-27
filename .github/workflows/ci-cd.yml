@@ -27,9 +27,10 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt
-      - run: flake8 --max-line-length=79 --exclude=migrations,.venv esports core
+      - run: flake8 --max-line-length=79 --exclude=migrations,.venv esports core bot
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test esports
+      - run: python -m unittest discover -s bot -t bot
 
   frontend:
     runs-on: ubuntu-24.04
