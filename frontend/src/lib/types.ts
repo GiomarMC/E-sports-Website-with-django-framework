@@ -339,6 +339,22 @@ export interface OrganizerContact {
   order: number
 }
 
+export type WebhookEvent = 'match.scheduled' | 'match.started' | 'stream.live' | 'match.result'
+
+export interface Webhook {
+  id: number
+  name: string
+  url: string
+  /** Shared with the receiver to check the signature. */
+  secret: string
+  /** Empty: every event. */
+  events: WebhookEvent[]
+  active: boolean
+  last_delivery_at: string | null
+  last_status: string
+  created_at: string
+}
+
 export interface ContactInfo {
   id: number
   platform: string

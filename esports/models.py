@@ -1,4 +1,5 @@
 import os
+import secrets
 import uuid
 from decimal import Decimal
 
@@ -738,6 +739,42 @@ class ContactInfo(models.Model):
 
 
 WHATSAPP_GROUP_PREFIX = 'https://chat.whatsapp.com/'
+
+
+def webhook_secret():
+    return secrets.token_hex(32)
+
+
+class Webhook(models.Model):
+    """Address that receives a signed POST when something public happens
+    in a tournament (a bot that announces it in Discord, for example).
+    Another bot is connected by adding its address here, without code."""
+    EVENT_CHOICES = (
+        ('match.scheduled', 'Match scheduled'),
+        ('match.started', 'Match started'),
+        ('stream.live', 'Stream live'),
+        ('match.result', 'Official result'),
+    )
+    name = models.CharField(max_length=100)
+    url = models.URLField(max_length=500)
+    # Shared with the receiver to check the signature of each request.
+    secret = models.CharField(max_length=64, default=webhook_secret)
+    # Empty: every event.
+    events = models.JSONField(default=list, blank=True)
+    active = models.BooleanField(default=True)
+    last_delivery_at = models.DateTimeField(null=True, blank=True)
+    # HTTP status of the last delivery, or why it failed.
+    last_status = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+    def wants(self, event):
+        return not self.events or event in self.events
 
 
 class OrganizerContact(models.Model):

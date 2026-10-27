@@ -21,6 +21,7 @@ import type {
   StageDetail,
   Stream,
   Tournament,
+  Webhook,
 } from './types'
 
 type Params = RequestOptions['params']
@@ -53,6 +54,7 @@ export const keys = {
   admins: ['admins'] as const,
   me: ['me'] as const,
   contacts: ['contacts'] as const,
+  webhooks: ['webhooks'] as const,
   paymentMethods: (game: number) => ['payment-methods', game] as const,
   organizerContacts: (params?: Params) => ['organizer-contacts', params ?? {}] as const,
 }
@@ -120,6 +122,8 @@ export const useOrganizerContacts = (params: Params, enabled = true) =>
   useApiQuery<OrganizerContact[]>(keys.organizerContacts(params), 'organizer-contacts/', { params, enabled })
 
 export const useContacts = () => useApiQuery<ContactInfo[]>(keys.contacts, 'contacts/')
+
+export const useWebhooks = () => useApiQuery<Webhook[]>(keys.webhooks, 'webhooks/')
 
 export const useQuote = (tournament: number, players: number) =>
   useApiQuery<Quote>(['quote', tournament, players], `tournaments/${tournament}/quote/`, {

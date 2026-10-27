@@ -846,10 +846,10 @@ class ScheduleTestCase(APITestCase):
         start = timezone.now().replace(microsecond=0)
 
         # Act
-        count = services.schedule_stage(stage, start, 60, parallel=2)
+        matches = services.schedule_stage(stage, start, 60, parallel=2)
 
         # Assert
-        self.assertEqual(count, 7)
+        self.assertEqual(len(matches), 7)
         dates = list(
             Match.objects.filter(stage=stage).order_by(
                 'round', 'position'

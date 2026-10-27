@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -14,7 +15,7 @@ from .models import (
     AdminGame, ContactInfo, CustomUser, Game, Match, MatchParticipant,
     MediaContent, OrganizerContact, PaymentMethod, Registration,
     RegistrationMember, SiteSettings, Stage, StageGroup, Stream, Tournament,
-    normalize_contact, validate_payment_method, validate_team_size,
+    Webhook, normalize_contact, validate_payment_method, validate_team_size,
 )
 
 
@@ -1125,3 +1126,49 @@ class OrganizerContactSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'value': error})
             data['value'] = value
         return data
+
+
+class WebhookSerializer(serializers.ModelSerializer):
+    """Addresses notified of the public events (superadmins only)."""
+    # Not URLField: its validator rejects internal names (http://bot:8080).
+    url = serializers.CharField(max_length=500)
+    events = serializers.ListField(
+        child=serializers.ChoiceField(choices=Webhook.EVENT_CHOICES),
+        required=False,
+    )
+
+    class Meta:
+        model = Webhook
+        fields = [
+            'id', 'name', 'url', 'secret', 'events', 'active',
+            'last_delivery_at', 'last_status', 'created_at'
+            ]
+        read_only_fields = [
+            'secret', 'last_delivery_at', 'last_status', 'created_at'
+            ]
+
+    def validate_url(self, value):
+        # The data travels encrypted (https), except to a service of the
+        # same server: a name without dots (http://bot:8080) never leaves
+        # the internal Docker network.
+        value = value.strip()
+        try:
+            parts = urlsplit(value)
+            parts.port  # Raises on an invalid port.
+        except ValueError:
+            parts = None
+        if not parts or parts.scheme not in ('http', 'https') \
+                or not parts.hostname:
+            raise serializers.ValidationError('Escribe una dirección válida.')
+        host = parts.hostname
+        internal = '.' not in host and host != 'localhost'
+        if not value.startswith('https://') and not internal \
+                and not settings.DEBUG:
+            raise serializers.ValidationError(
+                'La dirección debe empezar con https:// (o ser un servicio '
+                'interno, como http://bot:8080/events).'
+            )
+        return value
+
+    def validate_events(self, value):
+        return list(dict.fromkeys(value))

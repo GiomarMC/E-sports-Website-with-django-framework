@@ -285,6 +285,14 @@ SWAGGER_SETTINGS = {
     },
 }
 
+# Public address of the site. The webhooks send links built with it (never
+# the server IP); in production it comes from DOMAIN.
+SITE_URL = env.str('SITE_URL', default='').rstrip('/')
+if not SITE_URL and env.str('DOMAIN', default=''):
+    SITE_URL = f"https://{env.str('DOMAIN')}"
+# Webhooks are delivered in the background, except in tests.
+WEBHOOKS_ASYNC = not TESTING
+
 # Errors and warnings go to the container output (docker compose logs).
 LOGGING = {
     'version': 1,

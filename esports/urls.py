@@ -5,7 +5,7 @@ from .views import (
     AdminViewSet, ContactInfoViewSet, GameViewSet, MatchViewSet,
     MediaContentViewSet, OrganizerContactViewSet, PaymentMethodViewSet,
     RegistrationViewSet, SiteSettingsView, StageViewSet, StreamViewSet,
-    TournamentViewSet,
+    TournamentViewSet, WebhookViewSet,
 )
 
 
@@ -24,6 +24,7 @@ router.register(r'matches', MatchViewSet, basename='matches')
 router.register(r'streams', StreamViewSet, basename='streams')
 router.register(r'media', MediaContentViewSet, basename='media')
 router.register(r'contacts', ContactInfoViewSet, basename='contacts')
+router.register(r'webhooks', WebhookViewSet, basename='webhooks')
 router.register(
     r'organizer-contacts', OrganizerContactViewSet,
     basename='organizer-contacts',

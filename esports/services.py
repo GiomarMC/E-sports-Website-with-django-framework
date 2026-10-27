@@ -818,7 +818,8 @@ def stage_standings(stage):
 def schedule_stage(stage, start, interval_minutes, parallel=1,
                    only_unscheduled=True):
     """Assigns dates to the matches of a stage in order (round, position),
-    playing ``parallel`` matches at the same time every slot."""
+    playing ``parallel`` matches at the same time every slot. Returns the
+    scheduled matches."""
     if parallel < 1 or interval_minutes < 1:
         raise TournamentError(
             'Los matchs en paralelo y el intervalo deben ser positivos.'
@@ -835,4 +836,4 @@ def schedule_stage(stage, start, interval_minutes, parallel=1,
             minutes=interval_minutes * slot
         )
     Match.objects.bulk_update(matches, ['scheduled_at'])
-    return len(matches)
+    return matches

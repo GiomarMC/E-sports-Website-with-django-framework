@@ -6,6 +6,7 @@ import { api } from '../../lib/api'
 import { useApiMutation, useContacts, useSettings } from '../../lib/queries'
 import type { SiteSettings } from '../../lib/types'
 import { OrganizerContactsPanel } from './OrganizerContacts'
+import { WebhooksPanel } from './Webhooks'
 
 export default function SettingsPage() {
   const settings = useSettings()
@@ -93,6 +94,7 @@ function SettingsForm({ settings }: { settings: SiteSettings }) {
       </div>
 
       <Contacts />
+      <WebhooksPanel />
     </>
   )
 }

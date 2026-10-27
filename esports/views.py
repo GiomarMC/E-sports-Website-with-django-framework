@@ -25,11 +25,12 @@ from rest_framework_simplejwt.token_blacklist.models import (
 )
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from esports import services
+from esports import services, webhooks
 from esports.models import (
     AdminGame, ContactInfo, Game, Match, MediaContent, OrganizerContact,
     PaymentMethod,
-    Registration, SiteSettings, Stage, Stream, Tournament,
+    Registration, SiteSettings, Stage, Stream, Tournament, Webhook,
+    webhook_secret,
 )
 from esports.permissions import (
     IsAdminOrSuperAdmin, IsGameAdmin, IsSuperAdmin, ReadOnlyOrSuperAdmin,
@@ -48,7 +49,7 @@ from esports.serializers import (
     VOUCHER_LINK_SECONDS, VOUCHER_SALT,
     ScheduleSerializer, SiteSettingsSerializer, StageDetailSerializer,
     StageSerializer, StreamSerializer, TournamentSerializer,
-    update_amount_due,
+    WebhookSerializer, update_amount_due,
 )
 
 
@@ -840,10 +841,11 @@ class StageViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         stage = self.get_object()
         serializer = ScheduleSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        count = run_service(
+        matches = run_service(
             services.schedule_stage, stage, **serializer.validated_data
         )
-        return Response({'scheduled_matches': count})
+        announce_schedule(matches, rescheduled=set())
+        return Response({'scheduled_matches': len(matches)})
 
     @swagger_auto_schema(responses={200: GroupStandingsSerializer(many=True)})
     @action(detail=True, methods=['get'])
@@ -947,13 +949,23 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
             self.request.user,
             serializer.validated_data['stage'].tournament.game
         )
-        serializer.save()
+        match = serializer.save()
+        if match.scheduled_at:
+            announce_schedule([match], rescheduled=set())
 
     def perform_update(self, serializer):
         old_status = serializer.instance.status
+        old_date = serializer.instance.scheduled_at
         match = serializer.save()
         if match.status != old_status:
             services.sync_match_streams(match)
+            if match.status == 'live':
+                webhooks.emit('match.started', webhooks.match_data(match))
+        if match.scheduled_at and match.scheduled_at != old_date \
+                and match.status == 'scheduled':
+            announce_schedule(
+                [match], rescheduled={match.pk} if old_date else set()
+            )
 
     def perform_destroy(self, instance):
         if instance.status == 'completed' and not instance.is_bye:
@@ -970,6 +982,7 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         ``loser_next_match``). It can be corrected while the next match has
         not been played."""
         match = self.get_object()
+        was_completed = match.status == 'completed'
         serializer = ResultSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         scores = serializer.validated_data.get('scores', [])
@@ -984,13 +997,32 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
             placements=placements or None,
             draw=serializer.validated_data['draw'],
         )
-        return Response(self.get_serializer(self.get_object()).data)
+        match = self.get_object()
+        # The result the admin records is the official one.
+        webhooks.emit(
+            'match.result', webhooks.result_data(match, was_completed)
+        )
+        return Response(self.get_serializer(match).data)
 
     @action(detail=True, methods=['post'], url_path='reset-result')
     def reset_result(self, request, pk=None):
         match = self.get_object()
         run_service(services.reset_result, match)
         return Response(self.get_serializer(self.get_object()).data)
+
+
+def announce_schedule(matches, rescheduled):
+    """One event for every match scheduled together (an auto-schedule of
+    a whole stage is a single message, not one per match)."""
+    matches = [m for m in matches if not m.is_bye]
+    if not matches:
+        return
+    data = []
+    for match in matches:
+        item = webhooks.match_data(match)
+        item['rescheduled'] = match.pk in rescheduled
+        data.append(item)
+    webhooks.emit('match.scheduled', {'matches': data})
 
 
 # -------------------------------------------------------------- streams
@@ -1036,19 +1068,61 @@ class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
 
     def save_stream(self, serializer):
         self.check_stream_game(serializer)
+        was_live = getattr(serializer.instance, 'is_live', False)
         # Linked to a match that is already being played: live right away.
         match = serializer.validated_data.get('match')
         extra = {}
         if (match is not None and match.status == 'live'
                 and match != getattr(serializer.instance, 'match', None)):
             extra['is_live'] = True
-        serializer.save(**extra)
+        stream = serializer.save(**extra)
+        # A match that starts announces its streams with it
+        # (match.started); this covers the ones turned on by hand.
+        if stream.is_live and not was_live:
+            match = stream.match
+            game = stream.game or (game_of(match) if match else None)
+            webhooks.emit('stream.live', {
+                'stream': webhooks.stream_data(stream),
+                'game': webhooks.game_data(game) if game else None,
+                'match': webhooks.match_data(match) if match else None,
+            })
 
     def perform_create(self, serializer):
         self.save_stream(serializer)
 
     def perform_update(self, serializer):
         self.save_stream(serializer)
+
+
+# ------------------------------------------------------------- webhooks
+
+class WebhookViewSet(viewsets.ModelViewSet):
+    """Addresses (bots) notified when a match is scheduled or starts, a
+    stream goes live or a result is official. Superadmins only."""
+    queryset = Webhook.objects.all()
+    serializer_class = WebhookSerializer
+    permission_classes = [IsSuperAdmin]
+
+    @action(detail=True, methods=['post'])
+    def test(self, request, pk=None):
+        """Sends a ``ping`` event right away (a single attempt)."""
+        hook = self.get_object()
+        ok, status_text = webhooks.deliver(
+            hook, 'ping',
+            webhooks.encode('ping', {'message': 'Prueba de conexión'}),
+            delays=(0,),
+        )
+        hook.refresh_from_db()
+        return Response({'ok': ok, 'status': status_text,
+                         'webhook': self.get_serializer(hook).data})
+
+    @action(detail=True, methods=['post'], url_path='rotate-secret')
+    def rotate_secret(self, request, pk=None):
+        """New secret: the receiver must be updated with it."""
+        hook = self.get_object()
+        hook.secret = webhook_secret()
+        hook.save(update_fields=['secret'])
+        return Response(self.get_serializer(hook).data)
 
 
 # ----------------------------------------------------------------- misc
