@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { currentTournament, groupByDay, isPowerOfTwo, layoutBracket, registrationTotal, roundLabel } from '../tournament'
+import {
+  BOX_W,
+  currentTournament,
+  GAP_X,
+  groupByDay,
+  isPowerOfTwo,
+  layoutBracket,
+  layoutDoubleBracket,
+  registrationTotal,
+  roundLabel,
+} from '../tournament'
 import type { Match, Tournament } from '../types'
 
 function match(id: number, round: number, position: number, next: number | null = null): Match {
@@ -83,6 +93,62 @@ describe('layoutBracket', () => {
     const ys = items.filter((i) => i.match.round === 2).map((i) => i.y)
     expect(ys[0]).toBe(0)
     expect(ys[1]).toBeGreaterThan(ys[0])
+  })
+})
+
+describe('layoutDoubleBracket', () => {
+  it('draws upper, lower and grand final as one bracket', () => {
+    // 4 teams: the semifinal losers meet in the lower bracket.
+    const side = (m: Match, bracket: Match['bracket'], loser: number | null = null) => ({ ...m, bracket, loser_next_match: loser })
+    const sections = [
+      { group: null, bracket: 'upper' as const, rounds: [
+        { round: 1, matches: [side(match(1, 1, 1, 3), 'upper', 4), side(match(2, 1, 2, 3), 'upper', 4)] },
+        { round: 2, matches: [side(match(3, 2, 1, 6), 'upper', 5)] },
+      ] },
+      { group: null, bracket: 'lower' as const, rounds: [
+        { round: 1, matches: [side(match(4, 1, 1, 5), 'lower')] },
+        { round: 2, matches: [side(match(5, 2, 1, 6), 'lower')] },
+      ] },
+      { group: null, bracket: 'final' as const, rounds: [{ round: 1, matches: [side(match(6, 1, 1), 'final')] }] },
+    ]
+    const { items, lines, headers, titles } = layoutDoubleBracket(sections)
+    const at = (id: number) => items.find((item) => item.match.id === id)!
+    const column = (id: number) => at(id).x / (BOX_W + GAP_X)
+    expect([1, 2, 3, 4, 5, 6].map(column)).toEqual([0, 0, 1, 1, 2, 3])
+    expect(at(4).y).toBeGreaterThan(at(1).y + at(2).y)
+    expect(at(6).y).toBe((at(3).y + at(5).y) / 2)
+    expect(lines.map((line) => line.id).sort()).toEqual([1, 2, 3, 4, 5])
+    expect(headers).toHaveLength(5)
+    expect(titles.map((title) => title.side)).toEqual(['upper', 'lower'])
+  })
+})
+
+describe('layoutDoubleBracket with 8 teams', () => {
+  it('adds the lower rounds between the upper ones', () => {
+    const m = (id: number, round: number, position: number, bracket: Match['bracket'], next: number | null, loser: number | null = null) => ({
+      ...match(id, round, position, next),
+      bracket,
+      loser_next_match: loser,
+    })
+    const sections = [
+      { group: null, bracket: 'upper' as const, rounds: [
+        { round: 1, matches: [m(1, 1, 1, 'upper', 5, 8), m(2, 1, 2, 'upper', 5, 8), m(3, 1, 3, 'upper', 6, 9), m(4, 1, 4, 'upper', 6, 9)] },
+        { round: 2, matches: [m(5, 2, 1, 'upper', 7, 10), m(6, 2, 2, 'upper', 7, 11)] },
+        { round: 3, matches: [m(7, 3, 1, 'upper', 14, 13)] },
+      ] },
+      { group: null, bracket: 'lower' as const, rounds: [
+        { round: 1, matches: [m(8, 1, 1, 'lower', 10), m(9, 1, 2, 'lower', 11)] },
+        { round: 2, matches: [m(10, 2, 1, 'lower', 12), m(11, 2, 2, 'lower', 12)] },
+        { round: 3, matches: [m(12, 3, 1, 'lower', 13)] },
+        { round: 4, matches: [m(13, 4, 1, 'lower', 14)] },
+      ] },
+      { group: null, bracket: 'final' as const, rounds: [{ round: 1, matches: [m(14, 1, 1, 'final', null)] }] },
+    ]
+    const { items } = layoutDoubleBracket(sections)
+    const column = (id: number) => items.find((item) => item.match.id === id)!.x / (BOX_W + GAP_X)
+    expect([1, 5, 7].map(column)).toEqual([0, 1, 2])
+    expect([8, 10, 12, 13].map(column)).toEqual([1, 2, 3, 4])
+    expect(column(14)).toBe(5)
   })
 })
 

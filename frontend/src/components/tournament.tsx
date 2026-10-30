@@ -1,9 +1,9 @@
 import { ArrowRight, ArrowSquareOut, Broadcast, Trophy } from '@phosphor-icons/react'
 import { motion } from 'motion/react'
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 import { formatDate, formatTime, matchStatusLabel, platformLabel } from '../lib/format'
 import { toEmbed } from '../lib/streams'
-import { BOX_W, GAP_X, hasScore, layoutBracket, roundLabel } from '../lib/tournament'
+import { BOX_W, GAP_X, hasScore, layoutBracket, layoutDoubleBracket, ROUND_HEADER, roundLabel } from '../lib/tournament'
 import type { BracketSection, GroupStandings, Match, MatchParticipant, Stream } from '../lib/types'
 import { Badge, cx, TeamLogo } from './ui'
 
@@ -269,28 +269,57 @@ export function StatusBadge({ status }: { status: Match['status'] }) {
 
 // -------------------------------------------------------------- bracket
 
-const HEADER = 44
+type Layout = ReturnType<typeof layoutBracket>
+type Round = BracketSection['rounds'][number]
 
-export function Bracket({ section, onMatchClick }: { section: BracketSection; onMatchClick?: OnMatch }) {
-  const { items, lines, width, height } = useMemo(() => layoutBracket(section.rounds), [section.rounds])
+function RoundHeader({ round, x, y }: { round: Round; x: number; y: number }) {
+  return (
+    <div
+      className="absolute flex h-8 items-center justify-between gap-2 rounded-md border border-white/[0.06] bg-ink-800 px-3"
+      style={{ left: x, top: y, width: BOX_W }}
+    >
+      <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-100">
+        {roundLabel(round.matches[0]?.label ?? '', round.round)}
+      </span>
+      {round.matches[0] && <span className="shrink-0 font-mono text-[11px] text-ink-400">Bo{round.matches[0].best_of}</span>}
+    </div>
+  )
+}
+
+const SIDE_TITLES = {
+  upper: 'Upper bracket',
+  lower: 'Lower bracket',
+}
+
+function SideTitle({ side, y, width }: { side: keyof typeof SIDE_TITLES; y: number; width: number }) {
+  return (
+    <div className="absolute left-0 flex items-center gap-3" style={{ top: y, width }}>
+      <span className={cx('h-4 w-1 rounded-full', side === 'upper' ? 'bg-win' : 'bg-warn')} />
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-100">{SIDE_TITLES[side]}</p>
+      <span className="h-px flex-1 bg-white/[0.06]" />
+    </div>
+  )
+}
+
+/** Matches and the lines between them; ``children`` adds the headers. */
+function BracketCanvas({
+  layout,
+  top = 0,
+  onMatchClick,
+  children,
+}: {
+  layout: Layout
+  /** Room above the matches (for the round headers). */
+  top?: number
+  onMatchClick?: OnMatch
+  children: ReactNode
+}) {
+  const { items, lines, width, height } = layout
   return (
     <div className="scrollbar-thin -mx-4 overflow-x-auto overflow-y-hidden px-4 pb-4">
-      <div className="relative" style={{ width, height: height + HEADER }}>
-        {section.rounds.map((round, column) => (
-          <div
-            key={round.round}
-            className="absolute top-0 flex h-8 items-center justify-between gap-2 rounded-md border border-white/[0.06] bg-ink-800 px-3"
-            style={{ left: column * (BOX_W + GAP_X), width: BOX_W }}
-          >
-            <span className="truncate text-[11px] font-semibold uppercase tracking-wide text-ink-100">
-              {roundLabel(round.matches[0]?.label ?? '', round.round)}
-            </span>
-            {round.matches[0] && (
-              <span className="shrink-0 font-mono text-[11px] text-ink-400">Bo{round.matches[0].best_of}</span>
-            )}
-          </div>
-        ))}
-        <svg className="absolute left-0" style={{ top: HEADER }} width={width} height={height} aria-hidden>
+      <div className="relative" style={{ width, height: height + top }}>
+        {children}
+        <svg className="absolute left-0" style={{ top }} width={width} height={height} aria-hidden>
           {lines.map((line) => (
             <motion.path
               key={line.id}
@@ -308,7 +337,7 @@ export function Bracket({ section, onMatchClick }: { section: BracketSection; on
           <motion.div
             key={item.match.id}
             className="absolute"
-            style={{ left: item.x, top: item.y + HEADER, width: BOX_W }}
+            style={{ left: item.x, top: item.y + top, width: BOX_W }}
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: Math.min(index * 0.03, 0.5), type: 'spring', stiffness: 200, damping: 24 }}
@@ -332,36 +361,43 @@ export function Bracket({ section, onMatchClick }: { section: BracketSection; on
   )
 }
 
-const SECTION_TITLES: Record<string, string> = {
-  upper: 'Upper bracket',
-  lower: 'Lower bracket',
-  final: 'Gran final',
+export function Bracket({ section, onMatchClick }: { section: BracketSection; onMatchClick?: OnMatch }) {
+  const layout = useMemo(() => layoutBracket(section.rounds), [section.rounds])
+  return (
+    <BracketCanvas layout={layout} top={ROUND_HEADER} onMatchClick={onMatchClick}>
+      {section.rounds.map((round, column) => (
+        <RoundHeader key={round.round} round={round} x={column * (BOX_W + GAP_X)} y={0} />
+      ))}
+    </BracketCanvas>
+  )
 }
 
-/** Brackets of a stage. In a double elimination: upper, lower and grand
- * final, each with its title (like Liquipedia). */
+/** A double elimination in a single picture: upper, lower and grand final. */
+function DoubleBracket({ sections, onMatchClick }: { sections: BracketSection[]; onMatchClick?: OnMatch }) {
+  const layout = useMemo(() => layoutDoubleBracket(sections), [sections])
+  return (
+    <BracketCanvas layout={layout} onMatchClick={onMatchClick}>
+      {layout.titles.map((title) => (
+        <SideTitle key={title.side} side={title.side} y={title.y} width={title.width} />
+      ))}
+      {layout.headers.map((header) => (
+        <RoundHeader key={header.key} round={header.round} x={header.x} y={header.y} />
+      ))}
+    </BracketCanvas>
+  )
+}
+
+/** Brackets of a stage. A double elimination (upper, lower and grand final)
+ * is drawn as one bracket, like Liquipedia. */
 export function BracketSections({ sections, onMatchClick }: { sections: BracketSection[]; onMatchClick?: OnMatch }) {
+  const double = sections.filter((section) => section.bracket)
+  const single = sections.filter((section) => !section.bracket)
   return (
     <div className="space-y-8">
-      {sections.map((section) => (
-        <div key={`${section.group ?? ''}-${section.bracket ?? ''}`}>
-          {section.bracket && (
-            <div className="mb-3 flex items-center gap-3">
-              <span
-                className={cx(
-                  'h-4 w-1 rounded-full',
-                  section.bracket === 'upper' ? 'bg-win' : section.bracket === 'lower' ? 'bg-warn' : 'bg-accent',
-                )}
-              />
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-100">
-                {SECTION_TITLES[section.bracket]}
-              </p>
-              <span className="h-px flex-1 bg-white/[0.06]" />
-            </div>
-          )}
-          <Bracket section={section} onMatchClick={onMatchClick} />
-        </div>
+      {single.map((section) => (
+        <Bracket key={section.group ?? ''} section={section} onMatchClick={onMatchClick} />
       ))}
+      {double.length > 0 && <DoubleBracket sections={double} onMatchClick={onMatchClick} />}
     </div>
   )
 }
