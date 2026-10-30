@@ -286,21 +286,6 @@ function RoundHeader({ round, x, y }: { round: Round; x: number; y: number }) {
   )
 }
 
-const SIDE_TITLES = {
-  upper: 'Upper bracket',
-  lower: 'Lower bracket',
-}
-
-function SideTitle({ side, y, width }: { side: keyof typeof SIDE_TITLES; y: number; width: number }) {
-  return (
-    <div className="absolute left-0 flex items-center gap-3" style={{ top: y, width }}>
-      <span className={cx('h-4 w-1 rounded-full', side === 'upper' ? 'bg-win' : 'bg-warn')} />
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-100">{SIDE_TITLES[side]}</p>
-      <span className="h-px flex-1 bg-white/[0.06]" />
-    </div>
-  )
-}
-
 /** Matches and the lines between them; ``children`` adds the headers. */
 function BracketCanvas({
   layout,
@@ -377,9 +362,6 @@ function DoubleBracket({ sections, onMatchClick }: { sections: BracketSection[];
   const layout = useMemo(() => layoutDoubleBracket(sections), [sections])
   return (
     <BracketCanvas layout={layout} onMatchClick={onMatchClick}>
-      {layout.titles.map((title) => (
-        <SideTitle key={title.side} side={title.side} y={title.y} width={title.width} />
-      ))}
       {layout.headers.map((header) => (
         <RoundHeader key={header.key} round={header.round} x={header.x} y={header.y} />
       ))}

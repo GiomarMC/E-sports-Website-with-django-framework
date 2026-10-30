@@ -94,69 +94,41 @@ export function layoutBracket(rounds: Rounds) {
   return { items, lines: connect(placed), width, height: bottom(items) + 24 }
 }
 
-/** Height of a round header (label and best of) and of a bracket title. */
+/** Height of a round header (label and best of). */
 export const ROUND_HEADER = 44
-export const SIDE_TITLE = 30
 
 /** A double elimination in one picture, like Liquipedia: the upper bracket
- * on top, the lower below and the grand final on the right. A round goes one
- * column after every match that feeds it, losers included, so the first
- * lower round sits under the upper round whose losers it receives. */
+ * on top and the lower below, both from the first column, one round per
+ * column. The upper final lines up with the lower final and the grand final
+ * goes after both. */
 export function layoutDoubleBracket(sections: BracketSection[]) {
   const side = (name: string) => sections.find((section) => section.bracket === name)?.rounds ?? []
   const upper = side('upper')
   const lower = side('lower')
   const final = side('final')
-  const all = [...upper, ...lower, ...final].flatMap((round) => round.matches)
-  const depth = new Map<number, number>()
-  const depthOf = (match: Match): number => {
-    if (!depth.has(match.id)) {
-      const feeders = all.filter((m) => m.next_match === match.id || m.loser_next_match === match.id)
-      depth.set(match.id, Math.max(-1, ...feeders.map(depthOf)) + 1)
-    }
-    return depth.get(match.id)!
-  }
-  const columnsOf = (rounds: Rounds) => {
-    const columns: number[] = []
-    rounds.forEach((round, index) => {
-      const column = Math.max(0, ...round.matches.map(depthOf))
-      columns.push(index ? Math.max(column, columns[index - 1] + 1) : column)
-    })
-    return columns
-  }
-  const upperColumns = columnsOf(upper)
-  const lowerColumns = columnsOf(lower)
+  const lowerColumns = lower.map((_, index) => index)
+  const upperColumns = upper.map((_, index) =>
+    index === upper.length - 1 ? Math.max(index, lower.length - 1) : index,
+  )
   const lastColumn = Math.max(-1, ...upperColumns, ...lowerColumns)
-  const finalColumns = columnsOf(final).map((column, index) => Math.max(column, lastColumn + 1 + index))
+  const finalColumns = final.map((_, index) => lastColumn + 1 + index)
 
   const placed = new Map<number, Placed>()
-  const upperTop = SIDE_TITLE + ROUND_HEADER
-  placeRounds(upper, upperColumns, upperTop, placed)
-  const lowerTitle = bottom([...placed.values()]) + 16
-  const lowerTop = lowerTitle + SIDE_TITLE + ROUND_HEADER
-  placeRounds(lower, lowerColumns, lowerTop, placed)
-  placeRounds(final, finalColumns, upperTop, placed)
+  placeRounds(upper, upperColumns, ROUND_HEADER, placed)
+  const lowerHeader = upper.length ? bottom([...placed.values()]) + 8 : 0
+  placeRounds(lower, lowerColumns, lowerHeader + ROUND_HEADER, placed)
+  placeRounds(final, finalColumns, ROUND_HEADER, placed)
 
   const header = (rounds: Rounds, columns: number[], y: number) =>
     rounds.map((round, index) => ({ key: `${round.matches[0]?.bracket}-${round.round}`, x: columns[index] * (BOX_W + GAP_X), y, round }))
   const items = [...placed.values()]
   const columns = Math.max(lastColumn, ...finalColumns) + 1
-  // The titles stop before the grand final, which sits between both sides.
-  const titleWidth = (lastColumn + 1) * (BOX_W + GAP_X) - GAP_X
   return {
     items,
     lines: connect(placed),
     width: columns * (BOX_W + GAP_X) - GAP_X,
     height: bottom(items) + 24,
-    headers: [
-      ...header(upper, upperColumns, SIDE_TITLE),
-      ...header(final, finalColumns, SIDE_TITLE),
-      ...header(lower, lowerColumns, lowerTitle + SIDE_TITLE),
-    ],
-    titles: [
-      ...(upper.length ? [{ side: 'upper' as const, y: 0, width: titleWidth }] : []),
-      ...(lower.length ? [{ side: 'lower' as const, y: lowerTitle, width: titleWidth }] : []),
-    ],
+    headers: [...header(upper, upperColumns, 0), ...header(final, finalColumns, 0), ...header(lower, lowerColumns, lowerHeader)],
   }
 }
 

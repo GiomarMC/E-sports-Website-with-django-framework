@@ -111,20 +111,19 @@ describe('layoutDoubleBracket', () => {
       ] },
       { group: null, bracket: 'final' as const, rounds: [{ round: 1, matches: [side(match(6, 1, 1), 'final')] }] },
     ]
-    const { items, lines, headers, titles } = layoutDoubleBracket(sections)
+    const { items, lines, headers } = layoutDoubleBracket(sections)
     const at = (id: number) => items.find((item) => item.match.id === id)!
     const column = (id: number) => at(id).x / (BOX_W + GAP_X)
-    expect([1, 2, 3, 4, 5, 6].map(column)).toEqual([0, 0, 1, 1, 2, 3])
-    expect(at(4).y).toBeGreaterThan(at(1).y + at(2).y)
+    expect([1, 2, 3, 4, 5, 6].map(column)).toEqual([0, 0, 1, 0, 1, 2])
+    expect(at(4).y).toBeGreaterThan(at(2).y)
     expect(at(6).y).toBe((at(3).y + at(5).y) / 2)
     expect(lines.map((line) => line.id).sort()).toEqual([1, 2, 3, 4, 5])
     expect(headers).toHaveLength(5)
-    expect(titles.map((title) => title.side)).toEqual(['upper', 'lower'])
   })
 })
 
 describe('layoutDoubleBracket with 8 teams', () => {
-  it('adds the lower rounds between the upper ones', () => {
+  it('lines up the upper final with the lower final', () => {
     const m = (id: number, round: number, position: number, bracket: Match['bracket'], next: number | null, loser: number | null = null) => ({
       ...match(id, round, position, next),
       bracket,
@@ -146,9 +145,9 @@ describe('layoutDoubleBracket with 8 teams', () => {
     ]
     const { items } = layoutDoubleBracket(sections)
     const column = (id: number) => items.find((item) => item.match.id === id)!.x / (BOX_W + GAP_X)
-    expect([1, 5, 7].map(column)).toEqual([0, 1, 2])
-    expect([8, 10, 12, 13].map(column)).toEqual([1, 2, 3, 4])
-    expect(column(14)).toBe(5)
+    expect([1, 5, 7].map(column)).toEqual([0, 1, 3])
+    expect([8, 10, 12, 13].map(column)).toEqual([0, 1, 2, 3])
+    expect(column(14)).toBe(4)
   })
 })
 
