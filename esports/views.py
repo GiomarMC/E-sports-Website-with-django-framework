@@ -1075,6 +1075,14 @@ class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         if (match is not None and match.status == 'live'
                 and match != getattr(serializer.instance, 'match', None)):
             extra['is_live'] = True
+        # A stream linked to a match belongs to the game of that match, so
+        # the admins of that game can see and edit it.
+        game = serializer.validated_data.get(
+            'game', getattr(serializer.instance, 'game', None)
+        )
+        linked = match or getattr(serializer.instance, 'match', None)
+        if game is None and linked is not None:
+            extra['game'] = game_of(linked)
         stream = serializer.save(**extra)
         # A match that starts announces its streams with it
         # (match.started); this covers the ones turned on by hand.

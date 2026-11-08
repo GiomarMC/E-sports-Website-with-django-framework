@@ -2,10 +2,10 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from esports.models import ContactInfo
+from esports.models import ContactInfo, Match
 from esports.tests.factories import (
-    AdminGameFactory, AdminUserFactory, GameFactory, StreamFactory,
-    SuperAdminFactory,
+    AdminGameFactory, AdminUserFactory, GameFactory, StageFactory,
+    StreamFactory, SuperAdminFactory, TournamentFactory,
 )
 
 
@@ -121,6 +121,55 @@ class StreamViewSetTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.stream.refresh_from_db()
         self.assertFalse(self.stream.is_live)
+
+    def test_game_admin_renames_and_links_match(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        stage = StageFactory(tournament=TournamentFactory(game=self.game))
+        match = Match.objects.create(stage=stage)
+
+        # Act
+        response = self.client.patch(
+            self.detail_url, {'title': 'Semifinal', 'match': match.pk},
+            format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.stream.refresh_from_db()
+        self.assertEqual(self.stream.title, 'Semifinal')
+        self.assertEqual(self.stream.match, match)
+
+    def test_stream_with_only_match_takes_its_game(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        stage = StageFactory(tournament=TournamentFactory(game=self.game))
+        match = Match.objects.create(stage=stage)
+        payload = {
+            'title': 'x', 'platform': 'twitch',
+            'url': 'https://twitch.tv/x', 'match': match.pk,
+        }
+
+        # Act
+        response = self.client.post(self.list_url, payload, format='json')
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['game'], self.game.pk)
+
+    def test_link_match_of_other_game_returns_403(self):
+        # Arrange
+        self.client.force_authenticate(user=self.admin)
+        match = Match.objects.create(stage=StageFactory())
+
+        # Act
+        response = self.client.patch(
+            self.detail_url, {'game': None, 'match': match.pk},
+            format='json'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_update_unassigned_admin_returns_403(self):
         # Arrange

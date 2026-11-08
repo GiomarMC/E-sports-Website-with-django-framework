@@ -28,6 +28,8 @@ export default function StreamsPage() {
   const [editing, setEditing] = useState<Stream | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Stream | null>(null)
   const mine = (streams.data ?? []).filter((s) => (s.game ? canManage(s.game) : isSuperadmin))
+  // Game admins only add streams for the games assigned to them.
+  const canAdd = isSuperadmin || (games.data ?? []).some((g) => canManage(g.id))
 
   const live = useApiMutation({
     request: (stream: Stream) => api(`streams/${stream.id}/`, { method: 'PATCH', body: { is_live: !stream.is_live } }),
@@ -47,9 +49,11 @@ export default function StreamsPage() {
         title="Streams"
         description="Pega el link del canal de Twitch, Kick o YouTube. Si la vinculas a un match, se pone en vivo sola cuando marcas el match “En vivo” y se apaga al registrar el resultado. Sin match, actívala a mano."
         actions={
-          <Button icon={<Plus size={16} />} onClick={() => setEditing('new')}>
-            Agregar stream
-          </Button>
+          canAdd && (
+            <Button icon={<Plus size={16} />} onClick={() => setEditing('new')}>
+              Agregar stream
+            </Button>
+          )
         }
       />
       {streams.isPending ? (
@@ -61,7 +65,7 @@ export default function StreamsPage() {
           icon={<Broadcast size={24} />}
           title="Sin streams"
           description="Agrega el canal donde se transmitirán los matchs."
-          action={<Button onClick={() => setEditing('new')}>Agregar stream</Button>}
+          action={canAdd && <Button onClick={() => setEditing('new')}>Agregar stream</Button>}
         />
       ) : (
         <div className="surface divide-y divide-white/[0.05]">
