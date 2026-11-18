@@ -19,7 +19,7 @@ class StreamViewSetTestCase(APITestCase):
         StreamFactory(is_live=False)
         self.list_url = reverse('streams-list')
         self.detail_url = reverse(
-            'streams-detail', kwargs={'pk': self.stream.pk}
+            'streams-detail', kwargs={'pk': self.stream.public_id}
         )
 
     def test_public_list_live_streams(self):
@@ -28,7 +28,9 @@ class StreamViewSetTestCase(APITestCase):
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([s['id'] for s in response.data], [self.stream.id])
+        self.assertEqual(
+            [s['id'] for s in response.data], [self.stream.public_id]
+        )
 
     def test_retrieve_nonexistent_returns_404(self):
         # Act
@@ -44,7 +46,7 @@ class StreamViewSetTestCase(APITestCase):
         self.client.force_authenticate(user=self.admin)
         payload = {
             'title': 'Finals', 'platform': 'youtube',
-            'url': 'https://youtube.com/live/abc', 'game': self.game.pk,
+            'url': 'https://youtube.com/live/abc', 'game': self.game.public_id,
         }
 
         # Act
@@ -65,7 +67,7 @@ class StreamViewSetTestCase(APITestCase):
         self.client.force_authenticate(user=self.admin)
         payload = {
             'title': 'x', 'platform': 'twitch',
-            'url': 'https://twitch.tv/x', 'game': GameFactory().pk,
+            'url': 'https://twitch.tv/x', 'game': GameFactory().public_id,
         }
 
         # Act
@@ -98,7 +100,7 @@ class StreamViewSetTestCase(APITestCase):
         self.client.force_authenticate(user=self.admin)
         payload = {
             'title': 'x', 'platform': 'twitch', 'url': 'not-a-url',
-            'game': self.game.pk,
+            'game': self.game.public_id,
         }
 
         # Act
@@ -130,7 +132,7 @@ class StreamViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.patch(
-            self.detail_url, {'title': 'Semifinal', 'match': match.pk},
+            self.detail_url, {'title': 'Semifinal', 'match': match.public_id},
             format='json'
         )
 
@@ -147,7 +149,7 @@ class StreamViewSetTestCase(APITestCase):
         match = Match.objects.create(stage=stage)
         payload = {
             'title': 'x', 'platform': 'twitch',
-            'url': 'https://twitch.tv/x', 'match': match.pk,
+            'url': 'https://twitch.tv/x', 'match': match.public_id,
         }
 
         # Act
@@ -155,7 +157,7 @@ class StreamViewSetTestCase(APITestCase):
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['game'], self.game.pk)
+        self.assertEqual(response.data['game'], self.game.public_id)
 
     def test_link_match_of_other_game_returns_403(self):
         # Arrange
@@ -164,7 +166,7 @@ class StreamViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.patch(
-            self.detail_url, {'game': None, 'match': match.pk},
+            self.detail_url, {'game': None, 'match': match.public_id},
             format='json'
         )
 

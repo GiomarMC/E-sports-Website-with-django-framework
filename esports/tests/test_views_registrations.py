@@ -38,13 +38,13 @@ class RegistrationViewSetTestCase(APITestCase):
         self.foreign = RegistrationFactory()
         self.list_url = reverse('registrations-list')
         self.detail_url = reverse(
-            'registrations-detail', kwargs={'pk': self.registration.pk}
+            'registrations-detail', kwargs={'pk': self.registration.public_id}
         )
 
     def action_url(self, name, registration=None):
         registration = registration or self.registration
         return reverse(
-            f'registrations-{name}', kwargs={'pk': registration.pk}
+            f'registrations-{name}', kwargs={'pk': registration.public_id}
         )
 
     def test_list_only_managed_games(self):
@@ -57,7 +57,7 @@ class RegistrationViewSetTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [r['id'] for r in response.data], [self.registration.id]
+            [r['id'] for r in response.data], [self.registration.public_id]
         )
         self.assertIn('contact_email', response.data[0])
 
@@ -82,7 +82,7 @@ class RegistrationViewSetTestCase(APITestCase):
 
         # Assert
         self.assertEqual(len(by_status.data), 1)
-        self.assertEqual(by_search.data[0]['id'], self.registration.id)
+        self.assertEqual(by_search.data[0]['id'], self.registration.public_id)
 
     def test_list_without_auth_returns_401(self):
         # Act
@@ -95,7 +95,7 @@ class RegistrationViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         url = reverse(
-            'registrations-detail', kwargs={'pk': self.foreign.pk}
+            'registrations-detail', kwargs={'pk': self.foreign.public_id}
         )
 
         # Act
@@ -347,7 +347,7 @@ class RegistrationLookupTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [r['id'] for r in response.data['results']], [self.team.pk]
+            [r['id'] for r in response.data['results']], [self.team.public_id]
         )
         self.assertFalse(response.data['truncated'])
 
@@ -358,10 +358,11 @@ class RegistrationLookupTestCase(APITestCase):
         # Assert
         self.assertEqual(
             {r['id'] for r in response.data['results']},
-            {self.team.pk, self.other.pk},
+            {self.team.public_id, self.other.public_id},
         )
         rejected = next(
-            r for r in response.data['results'] if r['id'] == self.other.pk
+            r for r in response.data['results']
+            if r['id'] == self.other.public_id
         )
         self.assertEqual(rejected['rejection_reason'], 'Voucher ilegible')
 
@@ -397,9 +398,11 @@ class RegistrationLookupTestCase(APITestCase):
         contains = self.client.get(self.url, {'q': 'kusi gam'})
 
         # Assert
-        self.assertNotIn(partial.pk, [r['id'] for r in exact.data['results']])
+        self.assertNotIn(
+            partial.public_id, [r['id'] for r in exact.data['results']]
+        )
         self.assertEqual(
-            [r['id'] for r in contains.data['results']], [partial.pk]
+            [r['id'] for r in contains.data['results']], [partial.public_id]
         )
 
     def test_short_term_returns_400(self):
@@ -437,13 +440,13 @@ class RegistrationMembersTestCase(APITestCase):
             4, registration=self.registration
         )
         self.add_url = reverse(
-            'registrations-members', kwargs={'pk': self.registration.pk}
+            'registrations-members', kwargs={'pk': self.registration.public_id}
         )
         self.client.force_authenticate(user=self.admin)
 
     def member_url(self, member):
         return reverse('registrations-member', kwargs={
-            'pk': self.registration.pk, 'member_id': member.pk,
+            'pk': self.registration.public_id, 'member_id': member.public_id,
         })
 
     def new_player(self, **overrides):
@@ -561,7 +564,8 @@ class RegistrationMembersTestCase(APITestCase):
         # Arrange
         foreign = RegistrationMemberFactory()
         url = reverse('registrations-member', kwargs={
-            'pk': foreign.registration.pk, 'member_id': foreign.pk,
+            'pk': foreign.registration.public_id,
+            'member_id': foreign.public_id,
         })
 
         # Act

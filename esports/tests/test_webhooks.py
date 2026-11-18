@@ -38,14 +38,18 @@ class WebhookEventsTestCase(APITestCase):
         confirmed_registrations(self.tournament, 4)
         services.draw_stage(self.stage, shuffle=False)
         self.match = self.stage.matches.filter(round=1).first()
-        self.ids = [
+        self.pks = [
             p.registration_id for p in self.match.participants.all()
+        ]
+        # The API only knows the public ids.
+        self.ids = [
+            p.registration.public_id for p in self.match.participants.all()
         ]
         self.hook = Webhook.objects.create(
             name='Bot', url='https://bot.example.com/hook'
         )
         self.detail_url = reverse(
-            'matches-detail', kwargs={'pk': self.match.pk}
+            'matches-detail', kwargs={'pk': self.match.public_id}
         )
         self.client.force_authenticate(user=self.admin)
 
@@ -76,7 +80,7 @@ class WebhookEventsTestCase(APITestCase):
         self.assertTrue(data['streams'][0]['is_live'])
         self.assertEqual(
             data['game']['url'],
-            f'https://esports.example.com/juegos/{self.game.pk}'
+            f'https://esports.example.com/juegos/{self.game.public_id}'
         )
 
     def test_request_is_signed_with_the_secret(self, urlopen):
@@ -103,7 +107,7 @@ class WebhookEventsTestCase(APITestCase):
         # Act
         with self.captureOnCommitCallbacks(execute=True):
             self.client.post(
-                reverse('matches-result', kwargs={'pk': self.match.pk}),
+                reverse('matches-result', kwargs={'pk': self.match.public_id}),
                 {'scores': [
                     {'registration': self.ids[0], 'score': 2},
                     {'registration': self.ids[1], 'score': 1},
@@ -123,12 +127,12 @@ class WebhookEventsTestCase(APITestCase):
 
     def test_corrected_result(self, urlopen):
         # Arrange
-        services.record_result(self.match, {self.ids[0]: 2, self.ids[1]: 0})
+        services.record_result(self.match, {self.pks[0]: 2, self.pks[1]: 0})
 
         # Act
         with self.captureOnCommitCallbacks(execute=True):
             self.client.post(
-                reverse('matches-result', kwargs={'pk': self.match.pk}),
+                reverse('matches-result', kwargs={'pk': self.match.public_id}),
                 {'winner': self.ids[1]}, format='json',
             )
 
@@ -140,7 +144,7 @@ class WebhookEventsTestCase(APITestCase):
         # Act: no winner in a match that feeds the bracket.
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
-                reverse('matches-result', kwargs={'pk': self.match.pk}),
+                reverse('matches-result', kwargs={'pk': self.match.public_id}),
                 {'draw': True}, format='json',
             )
 
@@ -161,14 +165,16 @@ class WebhookEventsTestCase(APITestCase):
         [(event, payload, _)] = self.sent(urlopen)
         self.assertEqual(event, 'match.scheduled')
         [match] = payload['data']['matches']
-        self.assertEqual(match['id'], self.match.pk)
+        self.assertEqual(match['id'], self.match.public_id)
         self.assertFalse(match['rescheduled'])
 
     def test_auto_schedule_is_a_single_event(self, urlopen):
         # Act
         with self.captureOnCommitCallbacks(execute=True):
             self.client.post(
-                reverse('stages-auto-schedule', kwargs={'pk': self.stage.pk}),
+                reverse(
+                    'stages-auto-schedule', kwargs={'pk': self.stage.public_id}
+                ),
                 {'start': timezone.now().isoformat(), 'interval_minutes': 60},
                 format='json',
             )
@@ -185,15 +191,15 @@ class WebhookEventsTestCase(APITestCase):
         # Act
         with self.captureOnCommitCallbacks(execute=True):
             self.client.patch(
-                reverse('streams-detail', kwargs={'pk': stream.pk}),
+                reverse('streams-detail', kwargs={'pk': stream.public_id}),
                 {'is_live': True}, format='json',
             )
 
         # Assert
         [(event, payload, _)] = self.sent(urlopen)
         self.assertEqual(event, 'stream.live')
-        self.assertEqual(payload['data']['stream']['id'], stream.pk)
-        self.assertEqual(payload['data']['game']['id'], self.game.pk)
+        self.assertEqual(payload['data']['stream']['id'], stream.public_id)
+        self.assertEqual(payload['data']['game']['id'], self.game.public_id)
         self.assertIsNone(payload['data']['match'])
 
     def test_only_subscribed_and_active_hooks(self, urlopen):
@@ -358,7 +364,7 @@ class WebhookViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.post(
-            reverse('webhooks-test', kwargs={'pk': hook.pk})
+            reverse('webhooks-test', kwargs={'pk': hook.public_id})
         )
 
         # Assert
@@ -374,7 +380,7 @@ class WebhookViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.post(
-            reverse('webhooks-rotate-secret', kwargs={'pk': hook.pk})
+            reverse('webhooks-rotate-secret', kwargs={'pk': hook.public_id})
         )
 
         # Assert

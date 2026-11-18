@@ -74,7 +74,7 @@ fecha); `match.result` le agrega `winner`, `losers`, `draw` y `corrected`.
 
 ```json
 {
-  "id": 42,
+  "id": "8JnruppPa8I0",
   "label": "Semifinal 1",
   "stage": "Playoffs",
   "group": null,
@@ -83,22 +83,26 @@ fecha); `match.result` le agrega `winner`, `losers`, `draw` y `corrected`.
   "best_of": 3,
   "status": "completed",
   "scheduled_at": "2026-10-29T01:00:00+00:00",
-  "tournament": {"id": 1, "name": "Copa Left4dead SemCom 2026"},
-  "game": {"id": 3, "name": "Left 4 Dead 2", "url": "https://esports.subepe.app/juegos/3"},
+  "tournament": {"id": "b6crSpIMi8A1", "name": "Copa Left4dead SemCom 2026"},
+  "game": {"id": "Z9MCKjjZMSLD", "name": "Left 4 Dead 2", "url": "https://esports.subepe.app/juegos/Z9MCKjjZMSLD"},
   "teams": [
-    {"id": 7, "name": "Los niños", "logo": "https://esports.subepe.app/media/logos/a.png", "score": 2, "placement": null},
-    {"id": 9, "name": "chinitos", "logo": null, "score": 1, "placement": null}
+    {"id": "Ozwl6zBovCrx", "name": "Los niños", "logo": "https://esports.subepe.app/media/logos/a.png", "score": 2, "placement": null},
+    {"id": "B8bsSlAtt5z0", "name": "chinitos", "logo": null, "score": 1, "placement": null}
   ],
   "streams": [
-    {"id": 5, "title": "Left · Semifinal 1", "platform": "twitch", "url": "https://twitch.tv/…", "is_live": true}
+    {"id": "Qk3vT7mWb2Lx", "title": "Left · Semifinal 1", "platform": "twitch", "url": "https://twitch.tv/…", "is_live": true}
   ],
   "schedule_url": "https://esports.subepe.app/cronograma",
-  "winner": {"id": 7, "name": "Los niños", "logo": "…", "score": 2, "placement": null},
-  "losers": [{"id": 9, "name": "chinitos", "logo": null, "score": 1, "placement": null}],
+  "winner": {"id": "Ozwl6zBovCrx", "name": "Los niños", "logo": "…", "score": 2, "placement": null},
+  "losers": [{"id": "B8bsSlAtt5z0", "name": "chinitos", "logo": null, "score": 1, "placement": null}],
   "draw": false,
   "corrected": false
 }
 ```
+
+Los `id` de match, torneo, juego, equipo y stream son textos aleatorios de
+12 letras y números (los mismos que usan las URLs del sitio), no números
+correlativos.
 
 - Las fechas van en ISO 8601 y en UTC (`+00:00`); conviértelas a la hora de Perú al mostrarlas.
 - `score` y `placement` solo aparecen cuando el match terminó.

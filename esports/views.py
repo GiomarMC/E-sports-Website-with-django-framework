@@ -76,6 +76,32 @@ class ActionPermissionMixin:
         return [permission() for permission in permissions]
 
 
+# Objects are found by their random public id (letters and digits), never
+# by the database id: the URLs cannot be guessed or counted.
+PUBLIC_ID_REGEX = r'[0-9A-Za-z]+'
+
+
+class PublicLookupMixin:
+    lookup_field = 'public_id'
+    lookup_url_kwarg = 'pk'
+    lookup_value_regex = PUBLIC_ID_REGEX
+
+
+def filter_by_params(queryset, params, lookups):
+    """Applies ``?param=<public id>`` filters. ``lookups`` maps each query
+    param to one lookup or to several (any of them matches)."""
+    for param, lookup in lookups.items():
+        value = params.get(param)
+        if not value:
+            continue
+        options = lookup if isinstance(lookup, tuple) else (lookup,)
+        condition = Q()
+        for option in options:
+            condition |= Q(**{option: value})
+        queryset = queryset.filter(condition)
+    return queryset
+
+
 def check_game_permission(user, game):
     if not user.can_manage_game(game):
         raise PermissionDenied('No eres administrador de este juego.')
@@ -108,6 +134,7 @@ def revoke_tokens(user):
 
 
 class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
+    lookup_value_regex = PUBLIC_ID_REGEX
     permission_classes_by_action = {
         'login': PUBLIC,
         'logout': PUBLIC,
@@ -124,7 +151,7 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
 
     def get_admin(self, pk):
         return get_object_or_404(
-            User, pk=pk, role__in=['admin', 'superadmin']
+            User, public_id=pk, role__in=['admin', 'superadmin']
         )
 
     @swagger_auto_schema(request_body=AdminLoginSerializer)
@@ -290,7 +317,8 @@ class SiteSettingsView(APIView):
 
 # ---------------------------------------------------------------- games
 
-class GameViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class GameViewSet(PublicLookupMixin, ActionPermissionMixin,
+                  viewsets.ModelViewSet):
     permission_classes_by_action = {
         'list': PUBLIC,
         'retrieve': PUBLIC,
@@ -352,7 +380,8 @@ class GameViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
                         status=status.HTTP_200_OK)
 
 
-class PaymentMethodViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class PaymentMethodViewSet(PublicLookupMixin, ActionPermissionMixin,
+                           viewsets.ModelViewSet):
     """Payment data of each game, shown in the registration form. Visitors
     only see the active methods of active games."""
     serializer_class = PaymentMethodSerializer
@@ -365,9 +394,9 @@ class PaymentMethodViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         methods = PaymentMethod.objects.select_related('game')
-        game = self.request.query_params.get('game')
-        if game:
-            methods = methods.filter(game_id=game)
+        methods = filter_by_params(
+            methods, self.request.query_params, {'game': 'game__public_id'}
+        )
         user = self.request.user
         if is_admin_user(user):
             return methods.filter(game__in=user.managed_games())
@@ -388,7 +417,8 @@ class PaymentMethodViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
 
 # ---------------------------------------------------------- tournaments
 
-class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class TournamentViewSet(PublicLookupMixin, ActionPermissionMixin,
+                        viewsets.ModelViewSet):
     serializer_class = TournamentSerializer
     permission_classes_by_action = {
         'list': PUBLIC,
@@ -411,12 +441,9 @@ class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         ).prefetch_related('stages')
         if not is_admin_user(self.request.user):
             tournaments = tournaments.filter(game__active=True)
-        params = self.request.query_params
-        if params.get('game'):
-            tournaments = tournaments.filter(game_id=params['game'])
-        if params.get('status'):
-            tournaments = tournaments.filter(status=params['status'])
-        return tournaments
+        return filter_by_params(tournaments, self.request.query_params, {
+            'game': 'game__public_id', 'status': 'status',
+        })
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -524,7 +551,7 @@ class TournamentViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
 
 # -------------------------------------------------------- registrations
 
-class RegistrationViewSet(ActionPermissionMixin,
+class RegistrationViewSet(PublicLookupMixin, ActionPermissionMixin,
                           mixins.ListModelMixin,
                           mixins.RetrieveModelMixin,
                           mixins.UpdateModelMixin,
@@ -559,13 +586,11 @@ class RegistrationViewSet(ActionPermissionMixin,
                 tournament__game__in=user.managed_games()
             )
         params = self.request.query_params
-        for param, lookup in [('tournament', 'tournament_id'),
-                              ('game', 'tournament__game_id'),
-                              ('status', 'status')]:
-            if params.get(param):
-                registrations = registrations.filter(
-                    **{lookup: params[param]}
-                )
+        registrations = filter_by_params(registrations, params, {
+            'tournament': 'tournament__public_id',
+            'game': 'tournament__game__public_id',
+            'status': 'status',
+        })
         active = query_flag(self.request, 'is_active')
         if active is not None:
             registrations = registrations.filter(is_active=active)
@@ -652,7 +677,7 @@ class RegistrationViewSet(ActionPermissionMixin,
             raise PermissionDenied('El enlace del comprobante no es válido.')
         if str(signed_pk) != str(pk):
             raise PermissionDenied('El enlace del comprobante no es válido.')
-        registration = get_object_or_404(Registration, pk=pk)
+        registration = get_object_or_404(Registration, public_id=pk)
         if not registration.voucher:
             raise Http404
         try:
@@ -709,12 +734,14 @@ class RegistrationViewSet(ActionPermissionMixin,
 
     @swagger_auto_schema(methods=['patch'], request_body=MemberEditSerializer)
     @action(detail=True, methods=['patch', 'delete'],
-            url_path=r'members/(?P<member_id>[0-9]+)')
+            url_path=rf'members/(?P<member_id>{PUBLIC_ID_REGEX})')
     def member(self, request, pk=None, member_id=None):
         """Fixes (PATCH) or removes (DELETE) a player of the
         registration."""
         registration = self.get_object()
-        member = get_object_or_404(registration.members, pk=member_id)
+        member = get_object_or_404(
+            registration.members, public_id=member_id
+        )
         if request.method == 'DELETE':
             game = registration.tournament.game
             if registration.members.count() <= game.min_players:
@@ -756,7 +783,8 @@ class RegistrationViewSet(ActionPermissionMixin,
 
 # --------------------------------------------------------------- stages
 
-class StageViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class StageViewSet(PublicLookupMixin, ActionPermissionMixin,
+                   viewsets.ModelViewSet):
     permission_classes_by_action = {
         'list': PUBLIC,
         'retrieve': PUBLIC,
@@ -769,9 +797,9 @@ class StageViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         stages = Stage.objects.select_related('tournament__game')
         if not is_admin_user(self.request.user):
             stages = stages.filter(tournament__game__active=True)
-        tournament = self.request.query_params.get('tournament')
-        if tournament:
-            stages = stages.filter(tournament_id=tournament)
+        stages = filter_by_params(stages, self.request.query_params, {
+            'tournament': 'tournament__public_id',
+        })
         if self.action == 'retrieve':
             stages = stages.prefetch_related(
                 'groups__participants__registration__members'
@@ -811,10 +839,10 @@ class StageViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
             entries = stage.participants.order_by('seed')
             data['seeding'] = list(entries.filter(
                 starts_in_lower=False).values_list(
-                    'registration_id', flat=True))
+                    'registration__public_id', flat=True))
             data['lower_seeding'] = list(entries.filter(
                 starts_in_lower=True).values_list(
-                    'registration_id', flat=True))
+                    'registration__public_id', flat=True))
             data['bracket'] = bracket_sections(
                 match_queryset().filter(stage=stage), request
             )
@@ -900,7 +928,8 @@ def match_queryset():
     ).prefetch_related('participants__registration__members', 'streams')
 
 
-class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class MatchViewSet(PublicLookupMixin, ActionPermissionMixin,
+                   viewsets.ModelViewSet):
     serializer_class = MatchSerializer
     permission_classes_by_action = {
         'list': PUBLIC,
@@ -913,14 +942,17 @@ class MatchViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         if not is_admin_user(self.request.user):
             matches = matches.filter(stage__tournament__game__active=True)
         params = self.request.query_params
-        for param, lookup in [('tournament', 'stage__tournament_id'),
-                              ('game', 'stage__tournament__game_id'),
-                              ('stage', 'stage_id'),
-                              ('group', 'group_id'),
-                              ('round', 'round'),
-                              ('status', 'status')]:
-            if params.get(param):
-                matches = matches.filter(**{lookup: params[param]})
+        matches = filter_by_params(matches, params, {
+            'tournament': 'stage__tournament__public_id',
+            'game': 'stage__tournament__game__public_id',
+            'stage': 'stage__public_id',
+            'group': 'group__public_id',
+            'status': 'status',
+        })
+        if params.get('round'):
+            if not params['round'].isdigit():
+                raise ValidationError({'round': 'Debe ser un número.'})
+            matches = matches.filter(round=int(params['round']))
         if params.get('date'):
             day = parse_date(params['date'])
             if day is None:
@@ -1027,7 +1059,8 @@ def announce_schedule(matches, rescheduled):
 
 # -------------------------------------------------------------- streams
 
-class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class StreamViewSet(PublicLookupMixin, ActionPermissionMixin,
+                    viewsets.ModelViewSet):
     serializer_class = StreamSerializer
     permission_classes_by_action = {
         'list': PUBLIC,
@@ -1043,14 +1076,11 @@ class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
         live = query_flag(self.request, 'live')
         if live is not None:
             streams = streams.filter(is_live=live)
-        if params.get('game'):
-            streams = streams.filter(
-                Q(game_id=params['game'])
-                | Q(match__stage__tournament__game_id=params['game'])
-            )
-        if params.get('match'):
-            streams = streams.filter(match_id=params['match'])
-        return streams
+        return filter_by_params(streams, params, {
+            'game': ('game__public_id',
+                     'match__stage__tournament__game__public_id'),
+            'match': 'match__public_id',
+        })
 
     def check_stream_game(self, serializer):
         data = serializer.validated_data
@@ -1104,7 +1134,7 @@ class StreamViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
 
 # ------------------------------------------------------------- webhooks
 
-class WebhookViewSet(viewsets.ModelViewSet):
+class WebhookViewSet(PublicLookupMixin, viewsets.ModelViewSet):
     """Addresses (bots) notified when a match is scheduled or starts, a
     stream goes live or a result is official. Superadmins only."""
     queryset = Webhook.objects.all()
@@ -1135,20 +1165,21 @@ class WebhookViewSet(viewsets.ModelViewSet):
 
 # ----------------------------------------------------------------- misc
 
-class MediaContentViewSet(viewsets.ModelViewSet):
+class MediaContentViewSet(PublicLookupMixin, viewsets.ModelViewSet):
     queryset = MediaContent.objects.all()
     serializer_class = MediaContentSerializer
     permission_classes = [ReadOnlyOrSuperAdmin]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
 
 
-class ContactInfoViewSet(viewsets.ModelViewSet):
+class ContactInfoViewSet(PublicLookupMixin, viewsets.ModelViewSet):
     queryset = ContactInfo.objects.all()
     serializer_class = ContactInfoSerializer
     permission_classes = [ReadOnlyOrSuperAdmin]
 
 
-class OrganizerContactViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
+class OrganizerContactViewSet(PublicLookupMixin, ActionPermissionMixin,
+                              viewsets.ModelViewSet):
     """WhatsApp numbers, groups, phones and emails of the organizers.
     General contacts (no tournament) are managed by superadmins; the
     contacts of a tournament by the admins of its game."""
@@ -1162,8 +1193,9 @@ class OrganizerContactViewSet(ActionPermissionMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         contacts = OrganizerContact.objects.select_related('tournament')
         params = self.request.query_params
-        if params.get('tournament'):
-            contacts = contacts.filter(tournament_id=params['tournament'])
+        contacts = filter_by_params(contacts, params, {
+            'tournament': 'tournament__public_id',
+        })
         if query_flag(self.request, 'general'):
             contacts = contacts.filter(tournament__isnull=True)
         user = self.request.user

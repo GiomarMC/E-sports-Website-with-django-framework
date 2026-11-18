@@ -487,13 +487,18 @@ def place_in_slot(match, slot, registration):
     entry.save()
 
 
+def match_title(match):
+    # Never the database id: it is internal.
+    return match.label or f'ronda {match.round}, match {match.position}'
+
+
 def ensure_downstream_editable(match):
     for target in [match.next_match, match.loser_next_match]:
         if target is not None and target.status == 'completed' \
                 and not target.is_bye:
             raise TournamentError(
-                f'El match {target.id} (siguiente en la llave) ya tiene '
-                'resultado. Reinícialo primero.'
+                f'El match siguiente en la llave ({match_title(target)}) '
+                'ya tiene resultado. Reinícialo primero.'
             )
 
 
@@ -806,7 +811,7 @@ def stage_standings(stage):
             row['rank'] = rank
         result.append({
             'group': group.name if group else None,
-            'group_id': group.id if group else None,
+            'group_id': group.public_id if group else None,
             'standings': table,
         })
     return result

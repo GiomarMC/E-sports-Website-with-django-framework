@@ -5,18 +5,18 @@ import { Badge, cx, EmptyState, Skeleton } from '../../components/ui'
 import { platformLabel } from '../../lib/format'
 import { useGames, useSettings, useStreams } from '../../lib/queries'
 import { detectPlatform } from '../../lib/streams'
-import type { Stream } from '../../lib/types'
+import type { Id, Stream } from '../../lib/types'
 
 export default function LivePage() {
   const streams = useStreams()
   const games = useGames()
   const { data: settings } = useSettings()
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useState<Id | null>(null)
 
   const list: Stream[] = [...(streams.data ?? [])]
   if (settings?.main_stream_url && !list.some((s) => s.url === settings.main_stream_url)) {
     list.push({
-      id: -1,
+      id: 'canal-oficial',
       title: `Canal oficial de ${settings.event_name}`,
       platform: detectPlatform(settings.main_stream_url),
       url: settings.main_stream_url,

@@ -23,12 +23,12 @@ class StageViewSetTestCase(APITestCase):
         self.regs = confirmed_registrations(self.tournament, 8)
         self.list_url = reverse('stages-list')
         self.detail_url = reverse(
-            'stages-detail', kwargs={'pk': self.stage.pk}
+            'stages-detail', kwargs={'pk': self.stage.public_id}
         )
 
     def action_url(self, name, stage=None):
         return reverse(
-            f'stages-{name}', kwargs={'pk': (stage or self.stage).pk}
+            f'stages-{name}', kwargs={'pk': (stage or self.stage).public_id}
         )
 
     def test_public_list_by_tournament(self):
@@ -37,7 +37,7 @@ class StageViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.get(
-            self.list_url, {'tournament': self.tournament.pk}
+            self.list_url, {'tournament': self.tournament.public_id}
         )
 
         # Assert
@@ -57,7 +57,7 @@ class StageViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'tournament': self.tournament.pk,
+            'tournament': self.tournament.public_id,
             'name': 'Playoffs',
             'order': 2,
             'stage_type': 'single_elimination',
@@ -83,7 +83,7 @@ class StageViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=AdminUserFactory())
         payload = {
-            'tournament': self.tournament.pk, 'name': 'x', 'order': 2,
+            'tournament': self.tournament.public_id, 'name': 'x', 'order': 2,
             'stage_type': 'manual',
         }
 
@@ -97,7 +97,7 @@ class StageViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'tournament': self.tournament.pk, 'name': 'x', 'order': 1,
+            'tournament': self.tournament.public_id, 'name': 'x', 'order': 1,
             'stage_type': 'manual',
         }
 
@@ -125,7 +125,7 @@ class StageViewSetTestCase(APITestCase):
     def test_draw_with_explicit_participants(self):
         # Arrange
         self.client.force_authenticate(user=self.admin)
-        ids = [r.id for r in self.regs[:4]]
+        ids = [r.public_id for r in self.regs[:4]]
 
         # Act
         response = self.client.post(
@@ -255,8 +255,8 @@ class StageViewSetTestCase(APITestCase):
             stage_type='double_elimination',
         )
         regs = confirmed_registrations(stage.tournament, 8)
-        upper = [r.id for r in regs[:4]]
-        lower = [r.id for r in regs[4:]]
+        upper = [r.public_id for r in regs[:4]]
+        lower = [r.public_id for r in regs[4:]]
 
         # Act
         response = self.client.post(self.action_url('draw', stage), {

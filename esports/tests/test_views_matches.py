@@ -24,15 +24,19 @@ class MatchViewSetTestCase(APITestCase):
         self.regs = confirmed_registrations(self.tournament, 4)
         services.draw_stage(self.stage, shuffle=False)
         self.semi = self.stage.matches.filter(round=1).first()
-        self.ids = [
+        self.pks = [
             p.registration_id for p in self.semi.participants.all()
+        ]
+        # The API only knows the public ids.
+        self.ids = [
+            p.registration.public_id for p in self.semi.participants.all()
         ]
         self.list_url = reverse('matches-list')
         self.detail_url = reverse(
-            'matches-detail', kwargs={'pk': self.semi.pk}
+            'matches-detail', kwargs={'pk': self.semi.public_id}
         )
         self.result_url = reverse(
-            'matches-result', kwargs={'pk': self.semi.pk}
+            'matches-result', kwargs={'pk': self.semi.public_id}
         )
 
     def result_payload(self, first=2, second=0, **extra):
@@ -46,7 +50,9 @@ class MatchViewSetTestCase(APITestCase):
     def test_public_list_with_filters(self):
         # Act
         response = self.client.get(
-            self.list_url, {'tournament': self.tournament.pk, 'round': 1}
+            self.list_url, {
+                'tournament': self.tournament.public_id, 'round': 1
+            }
         )
 
         # Assert
@@ -63,7 +69,9 @@ class MatchViewSetTestCase(APITestCase):
         response = self.client.get(self.list_url, {'upcoming': 'true'})
 
         # Assert
-        self.assertEqual([m['id'] for m in response.data], [self.semi.id])
+        self.assertEqual(
+            [m['id'] for m in response.data], [self.semi.public_id]
+        )
 
     def test_public_list_invalid_date_returns_400(self):
         # Act
@@ -155,7 +163,7 @@ class MatchViewSetTestCase(APITestCase):
         self.assertEqual(response.data['winner'], self.ids[0])
         final = Match.objects.get(pk=self.semi.next_match_id)
         self.assertIn(
-            self.ids[0],
+            self.pks[0],
             [p.registration_id for p in final.participants.all()],
         )
 
@@ -190,7 +198,7 @@ class MatchViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.post(
-            self.result_url, {'winner': outsider.id}, format='json'
+            self.result_url, {'winner': outsider.public_id}, format='json'
         )
 
         # Assert
@@ -235,7 +243,7 @@ class MatchViewSetTestCase(APITestCase):
         self.client.force_authenticate(user=self.admin)
         payload = {'scores': [
             {'registration': self.ids[0], 'score': 1},
-            {'registration': RegistrationFactory().id, 'score': 0},
+            {'registration': RegistrationFactory().public_id, 'score': 0},
         ]}
 
         # Act
@@ -248,7 +256,7 @@ class MatchViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         final = self.stage.matches.get(round=2)
-        url = reverse('matches-result', kwargs={'pk': final.pk})
+        url = reverse('matches-result', kwargs={'pk': final.public_id})
 
         # Act
         response = self.client.post(
@@ -274,12 +282,12 @@ class MatchViewSetTestCase(APITestCase):
 
     def test_reset_result(self):
         # Arrange
-        services.record_result(self.semi, {self.ids[0]: 2, self.ids[1]: 0})
+        services.record_result(self.semi, {self.pks[0]: 2, self.pks[1]: 0})
         self.client.force_authenticate(user=self.admin)
 
         # Act
         response = self.client.post(
-            reverse('matches-reset-result', kwargs={'pk': self.semi.pk})
+            reverse('matches-reset-result', kwargs={'pk': self.semi.public_id})
         )
 
         # Assert
@@ -289,7 +297,7 @@ class MatchViewSetTestCase(APITestCase):
 
     def test_cannot_delete_completed_match(self):
         # Arrange
-        services.record_result(self.semi, {self.ids[0]: 2, self.ids[1]: 0})
+        services.record_result(self.semi, {self.pks[0]: 2, self.pks[1]: 0})
         self.client.force_authenticate(user=self.admin)
 
         # Act
@@ -372,8 +380,8 @@ class MatchViewSetTestCase(APITestCase):
         # Act
         response = self.client.post(reverse('streams-list'), {
             'title': 'Semifinal', 'platform': 'twitch',
-            'url': 'https://twitch.tv/semis', 'game': self.game.pk,
-            'match': self.semi.pk, 'is_live': False,
+            'url': 'https://twitch.tv/semis', 'game': self.game.public_id,
+            'match': self.semi.public_id, 'is_live': False,
         }, format='json')
 
         # Assert
@@ -397,15 +405,17 @@ class ManualMatchTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         final = self.client.post(self.list_url, {
-            'stage': self.stage.pk, 'round': 2, 'label': 'Grand final',
+            'stage': self.stage.public_id, 'round': 2, 'label': 'Grand final',
         }, format='json').data
 
         # Act
         response = self.client.post(self.list_url, {
-            'stage': self.stage.pk,
+            'stage': self.stage.public_id,
             'round': 1,
             'label': 'Upper final',
-            'registration_ids': [self.regs[0].id, self.regs[1].id],
+            'registration_ids': [
+                self.regs[0].public_id, self.regs[1].public_id
+            ],
             'next_match': final['id'],
             'next_match_slot': 1,
         }, format='json')
@@ -413,11 +423,11 @@ class ManualMatchTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['best_of'], 3)
-        upper = Match.objects.get(pk=response.data['id'])
+        upper = Match.objects.get(public_id=response.data['id'])
         services.record_result(
             upper, {self.regs[0].id: 2, self.regs[1].id: 1}
         )
-        grand_final = Match.objects.get(pk=final['id'])
+        grand_final = Match.objects.get(public_id=final['id'])
         self.assertEqual(
             grand_final.participants.get(slot=1).registration,
             self.regs[0],
@@ -436,7 +446,7 @@ class ManualMatchTestCase(APITestCase):
 
         # Act
         response = self.client.post(
-            self.list_url, {'stage': self.stage.pk}, format='json'
+            self.list_url, {'stage': self.stage.public_id}, format='json'
         )
 
         # Assert
@@ -449,7 +459,7 @@ class ManualMatchTestCase(APITestCase):
 
         # Act
         response = self.client.post(self.list_url, {
-            'stage': self.stage.pk, 'next_match': other.pk,
+            'stage': self.stage.public_id, 'next_match': other.public_id,
         }, format='json')
 
         # Assert
@@ -465,8 +475,8 @@ class ManualMatchTestCase(APITestCase):
 
         # Act
         response = self.client.post(self.list_url, {
-            'stage': self.stage.pk,
-            'registration_ids': [self.regs[0].id, pending.id],
+            'stage': self.stage.public_id,
+            'registration_ids': [self.regs[0].public_id, pending.public_id],
         }, format='json')
 
         # Assert
@@ -477,16 +487,18 @@ class ManualMatchTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         match = self.client.post(self.list_url, {
-            'stage': self.stage.pk,
+            'stage': self.stage.public_id,
             'best_of': 2,
-            'registration_ids': [self.regs[0].id, self.regs[1].id],
+            'registration_ids': [
+                self.regs[0].public_id, self.regs[1].public_id
+            ],
         }, format='json').data
         url = reverse('matches-result', kwargs={'pk': match['id']})
 
         # Act
         response = self.client.post(url, {'scores': [
-            {'registration': self.regs[0].id, 'score': 1},
-            {'registration': self.regs[1].id, 'score': 1},
+            {'registration': self.regs[0].public_id, 'score': 1},
+            {'registration': self.regs[1].public_id, 'score': 1},
         ]}, format='json')
 
         # Assert
@@ -497,8 +509,10 @@ class ManualMatchTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         match = self.client.post(self.list_url, {
-            'stage': self.stage.pk,
-            'registration_ids': [self.regs[0].id, self.regs[1].id],
+            'stage': self.stage.public_id,
+            'registration_ids': [
+                self.regs[0].public_id, self.regs[1].public_id
+            ],
         }, format='json').data
         url = reverse('matches-result', kwargs={'pk': match['id']})
 
@@ -520,7 +534,9 @@ class TournamentScheduleTestCase(APITestCase):
         services.draw_stage(stage, shuffle=False)
         start = timezone.now()
         services.schedule_stage(stage, start, 60)
-        url = reverse('tournaments-schedule', kwargs={'pk': tournament.pk})
+        url = reverse(
+            'tournaments-schedule', kwargs={'pk': tournament.public_id}
+        )
 
         # Act
         response = self.client.get(url)

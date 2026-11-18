@@ -1,7 +1,7 @@
 import { ArrowSquareOut, EnvelopeSimple, LinkSimple, Phone, UsersThree, WhatsappLogo } from '@phosphor-icons/react'
 import { contactValue } from '../lib/format'
 import { useOrganizerContacts } from '../lib/queries'
-import type { ContactKind, OrganizerContact } from '../lib/types'
+import type { ContactKind, Id, OrganizerContact } from '../lib/types'
 import { cx, Skeleton } from './ui'
 
 const ICONS: Record<ContactKind, typeof Phone> = {
@@ -73,7 +73,7 @@ export function TournamentContacts({
   title = 'Contacto con los organizadores',
   className,
 }: {
-  tournamentId: number
+  tournamentId: Id
   title?: string
   className?: string
 }) {

@@ -36,7 +36,7 @@ import { api, toFormData } from '../../lib/api'
 import { formatDate, formatMoney, registrationStatusLabel } from '../../lib/format'
 import { useApiMutation, useGames, useRegistrations, useTournament, useTournaments } from '../../lib/queries'
 import { PaymentMethodsPanel } from './PaymentMethods'
-import type { Member, Registration, RegistrationStatus, Tournament } from '../../lib/types'
+import type { Id, Member, Registration, RegistrationStatus, Tournament } from '../../lib/types'
 
 export default function RegistrationsPage() {
   const [tab, setTab] = useState<'inscripciones' | 'pagos'>('inscripciones')
@@ -67,7 +67,7 @@ function PaymentsByGame() {
   const { canManage } = useAuth()
   const games = useGames()
   const managed = (games.data ?? []).filter((g) => canManage(g.id))
-  const [selected, setSelected] = useState<number | null>(null)
+  const [selected, setSelected] = useState<Id | null>(null)
   const game = managed.find((g) => g.id === selected) ?? managed[0]
   if (games.isPending) return <Skeleton className="h-48" />
   if (!game) {
@@ -76,7 +76,7 @@ function PaymentsByGame() {
   return (
     <div className="space-y-6">
       {managed.length > 1 && (
-        <Select value={game.id} onChange={(e) => setSelected(Number(e.target.value))} className="max-w-xs" aria-label="Juego">
+        <Select value={game.id} onChange={(e) => setSelected(e.target.value)} className="max-w-xs" aria-label="Juego">
           {managed.map((g) => (
             <option key={g.id} value={g.id}>
               {g.name}
@@ -91,12 +91,12 @@ function PaymentsByGame() {
 
 const statusTone = { pending: 'warn', confirmed: 'win', rejected: 'accent' } as const
 
-export function RegistrationsPanel({ tournamentId }: { tournamentId?: number }) {
+export function RegistrationsPanel({ tournamentId }: { tournamentId?: Id }) {
   const tournaments = useTournaments()
   const [status, setStatus] = useState<RegistrationStatus | ''>('pending')
-  const [tournament, setTournament] = useState<number | ''>(tournamentId ?? '')
+  const [tournament, setTournament] = useState<Id>(tournamentId ?? '')
   const [search, setSearch] = useState('')
-  const [openId, setOpenId] = useState<number | null>(null)
+  const [openId, setOpenId] = useState<Id | null>(null)
   const registrations = useRegistrations({
     status: status || undefined,
     tournament: tournamentId ?? (tournament || undefined),
@@ -122,7 +122,7 @@ export function RegistrationsPanel({ tournamentId }: { tournamentId?: number }) 
           ))}
         </div>
         {!tournamentId && (
-          <Select value={tournament} onChange={(e) => setTournament(e.target.value ? Number(e.target.value) : '')}>
+          <Select value={tournament} onChange={(e) => setTournament(e.target.value)}>
             <option value="">Todos los torneos</option>
             {(tournaments.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -197,16 +197,16 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
   // ``null``: new player; ``undefined``: dialog closed.
   const [editingMember, setEditingMember] = useState<Member | null | undefined>(undefined)
   const [removingMember, setRemovingMember] = useState<Member | null>(null)
-  const tournament = useTournament(registration?.tournament ?? 0).data
+  const tournament = useTournament(registration?.tournament ?? '').data
   const invalidate = [['registrations'], ['tournament'], ['tournaments']]
 
   const confirm = useApiMutation({
-    request: (id: number) => api(`registrations/${id}/confirm/`, { method: 'POST' }),
+    request: (id: Id) => api(`registrations/${id}/confirm/`, { method: 'POST' }),
     invalidate,
     success: 'Inscripción confirmada',
   })
   const reject = useApiMutation({
-    request: (id: number) => api(`registrations/${id}/reject/`, { method: 'POST', body: { reason } }),
+    request: (id: Id) => api(`registrations/${id}/reject/`, { method: 'POST', body: { reason } }),
     invalidate,
     success: 'Inscripción rechazada',
     onSuccess: () => {
@@ -232,7 +232,7 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
     onSuccess: () => setRemovingMember(null),
   })
   const remove = useApiMutation({
-    request: (id: number) => api(`registrations/${id}/`, { method: 'DELETE' }),
+    request: (id: Id) => api(`registrations/${id}/`, { method: 'DELETE' }),
     invalidate,
     success: 'Inscripción eliminada',
     onSuccess: () => {

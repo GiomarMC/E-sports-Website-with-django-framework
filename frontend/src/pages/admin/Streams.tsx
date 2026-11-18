@@ -194,7 +194,7 @@ function StreamForm({ stream, onClose }: { stream: Stream | null; onClose: () =>
               <Select
                 id={id}
                 value={form.game ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, game: e.target.value ? Number(e.target.value) : null, match: null }))}
+                onChange={(e) => setForm((f) => ({ ...f, game: e.target.value || null, match: null }))}
               >
                 {isSuperadmin && <option value="">Canal general (todos)</option>}
                 {managed.map((game) => (
@@ -211,7 +211,7 @@ function StreamForm({ stream, onClose }: { stream: Stream | null; onClose: () =>
                 id={id}
                 value={form.match ?? ''}
                 disabled={!form.game}
-                onChange={(e) => set('match', e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => set('match', e.target.value || null)}
               >
                 <option value="">Ninguno</option>
                 {(matches.data ?? []).map((m) => (

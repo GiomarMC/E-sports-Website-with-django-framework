@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, loadTokens, onTokensChange, saveTokens } from '../lib/api'
 import { keys } from '../lib/queries'
-import type { AdminUser } from '../lib/types'
+import type { AdminUser, Id } from '../lib/types'
 
 interface AuthState {
   user: AdminUser | null
@@ -11,7 +11,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<AdminUser>
   logout: () => void
   /** True when the user can manage the given game. */
-  canManage: (gameId: number | null | undefined) => boolean
+  canManage: (gameId: Id | null | undefined) => boolean
 }
 
 const AuthContext = createContext<AuthState | null>(null)

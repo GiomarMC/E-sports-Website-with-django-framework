@@ -27,7 +27,7 @@ class AdminLoginTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('access', response.data)
-        self.assertEqual(response.data['admin']['id'], self.admin.id)
+        self.assertEqual(response.data['admin']['id'], self.admin.public_id)
 
     def test_login_with_wrong_password_returns_401(self):
         # Act
@@ -76,7 +76,9 @@ class AdminManagementTestCase(APITestCase):
         self.admin = AdminUserFactory()
         self.game = GameFactory()
         self.list_url = reverse('admin-list')
-        self.detail_url = reverse('admin-detail', kwargs={'pk': self.admin.pk})
+        self.detail_url = reverse(
+            'admin-detail', kwargs={'pk': self.admin.public_id}
+        )
 
     def test_list_as_superadmin_returns_200(self):
         # Arrange
@@ -113,7 +115,7 @@ class AdminManagementTestCase(APITestCase):
             'username': 'dota_admin',
             'password': 'Sup3r-Secret-99',
             'role': 'admin',
-            'game_ids': [self.game.pk],
+            'game_ids': [self.game.public_id],
         }
 
         # Act
@@ -181,7 +183,7 @@ class AdminManagementTestCase(APITestCase):
     def test_superadmin_cannot_change_own_role(self):
         # Arrange
         self.client.force_authenticate(user=self.superadmin)
-        url = reverse('admin-detail', kwargs={'pk': self.superadmin.pk})
+        url = reverse('admin-detail', kwargs={'pk': self.superadmin.public_id})
 
         # Act
         response = self.client.patch(url, {'role': 'admin'}, format='json')
@@ -203,7 +205,7 @@ class AdminManagementTestCase(APITestCase):
     def test_cannot_delete_own_account(self):
         # Arrange
         self.client.force_authenticate(user=self.superadmin)
-        url = reverse('admin-detail', kwargs={'pk': self.superadmin.pk})
+        url = reverse('admin-detail', kwargs={'pk': self.superadmin.public_id})
 
         # Act
         response = self.client.delete(url)
@@ -214,7 +216,9 @@ class AdminManagementTestCase(APITestCase):
     def test_reset_password(self):
         # Arrange
         self.client.force_authenticate(user=self.superadmin)
-        url = reverse('admin-reset-password', kwargs={'pk': self.admin.pk})
+        url = reverse(
+            'admin-reset-password', kwargs={'pk': self.admin.public_id}
+        )
 
         # Act
         response = self.client.post(
@@ -231,7 +235,7 @@ class AdminManagementTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.superadmin)
         url = reverse(
-            'admin-reset-password', kwargs={'pk': self.superadmin.pk}
+            'admin-reset-password', kwargs={'pk': self.superadmin.public_id}
         )
 
         # Act
@@ -248,11 +252,11 @@ class AdminManagementTestCase(APITestCase):
         # Arrange
         AdminGameFactory(admin=self.admin)
         self.client.force_authenticate(user=self.superadmin)
-        url = reverse('admin-games', kwargs={'pk': self.admin.pk})
+        url = reverse('admin-games', kwargs={'pk': self.admin.public_id})
 
         # Act
         response = self.client.put(
-            url, {'game_ids': [self.game.pk]}, format='json'
+            url, {'game_ids': [self.game.public_id]}, format='json'
         )
 
         # Assert
@@ -264,11 +268,11 @@ class AdminManagementTestCase(APITestCase):
     def test_assign_games_to_superadmin_returns_400(self):
         # Arrange
         self.client.force_authenticate(user=self.superadmin)
-        url = reverse('admin-games', kwargs={'pk': self.superadmin.pk})
+        url = reverse('admin-games', kwargs={'pk': self.superadmin.public_id})
 
         # Act
         response = self.client.put(
-            url, {'game_ids': [self.game.pk]}, format='json'
+            url, {'game_ids': [self.game.public_id]}, format='json'
         )
 
         # Assert

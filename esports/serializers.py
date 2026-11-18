@@ -57,6 +57,51 @@ def validate_file_content(value):
     return value
 
 
+# ------------------------------------------------------------ public ids
+
+class PublicIdRelatedField(serializers.SlugRelatedField):
+    """Relations are read and written with the random ``public_id`` of
+    the object, never with its database id."""
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault('slug_field', 'public_id')
+        super().__init__(**kwargs)
+
+
+class PublicIdField(serializers.Field):
+    """A ``public_id`` sent by the client, turned into the database id the
+    services work with. Unknown ids are rejected."""
+    default_error_messages = {
+        'invalid': 'Identificador inválido.',
+        'not_found': 'No existe ningún elemento con el id "{value}".',
+    }
+
+    def __init__(self, model, **kwargs):
+        self.model = model
+        super().__init__(**kwargs)
+
+    def to_internal_value(self, data):
+        if not isinstance(data, str) or not data.isalnum():
+            self.fail('invalid')
+        pk = self.model.objects.filter(public_id=data).values_list(
+            'pk', flat=True
+        ).first()
+        if pk is None:
+            self.fail('not_found', value=data)
+        return pk
+
+    def to_representation(self, value):
+        return self.model.objects.filter(pk=value).values_list(
+            'public_id', flat=True
+        ).first()
+
+
+class PublicModelSerializer(serializers.ModelSerializer):
+    """``id`` and every relation use the public id of the objects."""
+    serializer_related_field = PublicIdRelatedField
+    id = serializers.CharField(source='public_id', read_only=True)
+
+
 VOUCHER_SALT = 'esports.voucher'
 # Lifetime of the signed voucher links given to the admins.
 VOUCHER_LINK_SECONDS = 60 * 60
@@ -67,8 +112,8 @@ def voucher_url(registration):
     expires instead of a public URL."""
     if not registration.voucher:
         return None
-    token = signing.dumps(registration.pk, salt=VOUCHER_SALT)
-    path = reverse('registrations-voucher', args=[registration.pk])
+    token = signing.dumps(registration.public_id, salt=VOUCHER_SALT)
+    path = reverse('registrations-voucher', args=[registration.public_id])
     return f'{path}?t={token}'
 
 
@@ -118,13 +163,13 @@ class ResetPasswordSerializer(serializers.Serializer):
         return value
 
 
-class GameSerializer(serializers.ModelSerializer):
+class GameSerializer(PublicModelSerializer):
     class Meta:
         model = Game
         fields = ['id', 'name']
 
 
-class AdminListSerializer(serializers.ModelSerializer):
+class AdminListSerializer(PublicModelSerializer):
     games = serializers.SerializerMethodField()
 
     class Meta:
@@ -138,9 +183,9 @@ class AdminListSerializer(serializers.ModelSerializer):
         return GameSerializer(obj.managed_games(), many=True).data
 
 
-class AdminCreateSerializer(serializers.ModelSerializer):
+class AdminCreateSerializer(PublicModelSerializer):
     password = serializers.CharField(write_only=True)
-    game_ids = serializers.PrimaryKeyRelatedField(
+    game_ids = PublicIdRelatedField(
         queryset=Game.objects.all(), many=True, required=False,
         write_only=True
         )
@@ -175,7 +220,7 @@ class AdminCreateSerializer(serializers.ModelSerializer):
         return user
 
 
-class AdminUpdateSerializer(serializers.ModelSerializer):
+class AdminUpdateSerializer(PublicModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
@@ -190,7 +235,7 @@ class AdminUpdateSerializer(serializers.ModelSerializer):
 
 
 class AssignGamesSerializer(serializers.Serializer):
-    game_ids = serializers.PrimaryKeyRelatedField(
+    game_ids = PublicIdRelatedField(
         queryset=Game.objects.all(), many=True
         )
 
@@ -219,7 +264,7 @@ GAME_ADMIN_FIELDS = {
 }
 
 
-class GameCreateUpdateSerializer(serializers.ModelSerializer):
+class GameCreateUpdateSerializer(PublicModelSerializer):
     class Meta:
         model = Game
         fields = ['id', 'name', 'description', 'type_of_game',
@@ -266,7 +311,7 @@ class GameCreateUpdateSerializer(serializers.ModelSerializer):
         return data
 
 
-class GamePublicSerializer(serializers.ModelSerializer):
+class GamePublicSerializer(PublicModelSerializer):
     tournaments = serializers.SerializerMethodField()
 
     class Meta:
@@ -277,12 +322,12 @@ class GamePublicSerializer(serializers.ModelSerializer):
 
     def get_tournaments(self, obj):
         return [{
-            'id': t.id,
+            'id': t.public_id,
             'name': t.name,
             'status': t.status} for t in obj.tournaments.all()]
 
 
-class PaymentMethodSerializer(serializers.ModelSerializer):
+class PaymentMethodSerializer(PublicModelSerializer):
     method_display = serializers.CharField(
         source='get_method_display', read_only=True
     )
@@ -331,13 +376,13 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
 
 # ---------------------------------------------------------- tournaments
 
-class StageSummarySerializer(serializers.ModelSerializer):
+class StageSummarySerializer(PublicModelSerializer):
     class Meta:
         model = Stage
         fields = ['id', 'name', 'order', 'stage_type', 'status']
 
 
-class TournamentSerializer(serializers.ModelSerializer):
+class TournamentSerializer(PublicModelSerializer):
     game_name = serializers.CharField(source='game.name', read_only=True)
     type_of_game = serializers.CharField(
         source='game.type_of_game', read_only=True
@@ -425,7 +470,7 @@ class JSONListField(serializers.ListField):
         return super().get_value(dictionary)
 
 
-class RegistrationMemberSerializer(serializers.ModelSerializer):
+class RegistrationMemberSerializer(PublicModelSerializer):
     class Meta:
         model = RegistrationMember
         fields = [
@@ -536,13 +581,13 @@ class MemberEditSerializer(RegistrationMemberSerializer):
         return member
 
 
-class PublicMemberSerializer(serializers.ModelSerializer):
+class PublicMemberSerializer(PublicModelSerializer):
     class Meta:
         model = RegistrationMember
         fields = ['nickname', 'is_captain']
 
 
-class RegistrationCreateSerializer(serializers.ModelSerializer):
+class RegistrationCreateSerializer(PublicModelSerializer):
     members = JSONListField(
         child=RegistrationMemberSerializer(), allow_empty=False
         )
@@ -637,7 +682,7 @@ class RegistrationCreateSerializer(serializers.ModelSerializer):
         return registration
 
 
-class RegistrationSerializer(serializers.ModelSerializer):
+class RegistrationSerializer(PublicModelSerializer):
     """Full data, only for admins. They can fix the team data (name, logo,
     contact) and order (seed) or enable/disable it; the players change
     through the members actions."""
@@ -698,7 +743,7 @@ class RegistrationSerializer(serializers.ModelSerializer):
         return obj.voucher.name.lower().endswith('.pdf')
 
 
-class RegistrationStatusSerializer(serializers.ModelSerializer):
+class RegistrationStatusSerializer(PublicModelSerializer):
     """What the person that registered can see with its code."""
     display_name = serializers.CharField(read_only=True)
     tournament_name = serializers.CharField(
@@ -730,7 +775,7 @@ class RegistrationLookupSerializer(RegistrationStatusSerializer):
             ]
 
 
-class PublicRegistrationSerializer(serializers.ModelSerializer):
+class PublicRegistrationSerializer(PublicModelSerializer):
     """Participants list shown in the public site."""
     display_name = serializers.CharField(read_only=True)
     members = PublicMemberSerializer(many=True, read_only=True)
@@ -757,7 +802,7 @@ class StageUpdateMixin:
         return stage
 
 
-class StageSerializer(StageUpdateMixin, serializers.ModelSerializer):
+class StageSerializer(StageUpdateMixin, PublicModelSerializer):
     class Meta:
         model = Stage
         fields = [
@@ -808,7 +853,7 @@ class StageSerializer(StageUpdateMixin, serializers.ModelSerializer):
 
 class DrawSerializer(serializers.Serializer):
     registration_ids = serializers.ListField(
-        child=serializers.IntegerField(), required=False, allow_empty=True,
+        child=PublicIdField(Registration), required=False, allow_empty=True,
         help_text=(
             'Ordered participants. Empty: confirmed registrations (first '
             'stage) or qualifiers of the previous stage.'
@@ -819,7 +864,7 @@ class DrawSerializer(serializers.Serializer):
         help_text='Random draw. False keeps the order (seeding).'
         )
     lower_registration_ids = serializers.ListField(
-        child=serializers.IntegerField(), required=False, allow_empty=True,
+        child=PublicIdField(Registration), required=False, allow_empty=True,
         help_text='Double elimination: teams that start in the lower bracket.'
         )
     preview = serializers.BooleanField(
@@ -840,14 +885,14 @@ class ScheduleSerializer(serializers.Serializer):
 
 # -------------------------------------------------------------- matches
 
-class MatchParticipantSerializer(serializers.ModelSerializer):
+class MatchParticipantSerializer(PublicModelSerializer):
     registration_name = serializers.SerializerMethodField()
     logo = serializers.SerializerMethodField()
 
     class Meta:
         model = MatchParticipant
         fields = [
-            'id', 'slot', 'registration', 'registration_name', 'logo',
+            'slot', 'registration', 'registration_name', 'logo',
             'score', 'placement'
             ]
 
@@ -862,7 +907,7 @@ class MatchParticipantSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
 
-class StreamSerializer(serializers.ModelSerializer):
+class StreamSerializer(PublicModelSerializer):
     class Meta:
         model = Stream
         fields = [
@@ -872,22 +917,22 @@ class StreamSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
 
-class MatchSerializer(serializers.ModelSerializer):
+class MatchSerializer(PublicModelSerializer):
     participants = MatchParticipantSerializer(many=True, read_only=True)
     streams = StreamSerializer(many=True, read_only=True)
     stage_name = serializers.CharField(source='stage.name', read_only=True)
     group_name = serializers.CharField(
         source='group.name', read_only=True, default=None
         )
-    tournament = serializers.IntegerField(
-        source='stage.tournament_id', read_only=True
+    tournament = serializers.CharField(
+        source='stage.tournament.public_id', read_only=True
         )
-    game = serializers.IntegerField(
-        source='stage.tournament.game_id', read_only=True
+    game = serializers.CharField(
+        source='stage.tournament.game.public_id', read_only=True
         )
     can_draw = serializers.BooleanField(read_only=True)
     registration_ids = serializers.ListField(
-        child=serializers.IntegerField(allow_null=True), write_only=True,
+        child=PublicIdField(Registration, allow_null=True), write_only=True,
         required=False,
         help_text='Participants by slot (null = TBD). Manual matches.'
         )
@@ -1002,14 +1047,14 @@ class MatchSerializer(serializers.ModelSerializer):
 
 
 class ScoreSerializer(serializers.Serializer):
-    registration = serializers.IntegerField()
+    registration = PublicIdField(Registration)
     score = serializers.IntegerField()
     placement = serializers.IntegerField(min_value=1, required=False)
 
 
 class ResultSerializer(serializers.Serializer):
-    winner = serializers.IntegerField(
-        required=False, allow_null=True,
+    winner = PublicIdField(
+        Registration, required=False, allow_null=True,
         help_text=(
             'Registration that wins the match. Enough on its own for 1 vs 1 '
             'matches; it also resolves forfeits and ties.'
@@ -1057,11 +1102,11 @@ class StandingRowSerializer(serializers.Serializer):
 
 class GroupStandingsSerializer(serializers.Serializer):
     group = serializers.CharField(allow_null=True)
-    group_id = serializers.IntegerField(allow_null=True)
+    group_id = serializers.CharField(allow_null=True)
     standings = StandingRowSerializer(many=True)
 
 
-class StageGroupSerializer(serializers.ModelSerializer):
+class StageGroupSerializer(PublicModelSerializer):
     participants = serializers.SerializerMethodField()
 
     class Meta:
@@ -1090,7 +1135,7 @@ class StageDetailSerializer(StageSerializer):
 
 # ----------------------------------------------------------------- misc
 
-class MediaContentSerializer(serializers.ModelSerializer):
+class MediaContentSerializer(PublicModelSerializer):
     class Meta:
         model = MediaContent
         fields = ['id', 'title', 'file', 'type', 'uploaded_at']
@@ -1099,13 +1144,13 @@ class MediaContentSerializer(serializers.ModelSerializer):
         return validate_file_size(value)
 
 
-class ContactInfoSerializer(serializers.ModelSerializer):
+class ContactInfoSerializer(PublicModelSerializer):
     class Meta:
         model = ContactInfo
         fields = ['id', 'platform', 'link']
 
 
-class OrganizerContactSerializer(serializers.ModelSerializer):
+class OrganizerContactSerializer(PublicModelSerializer):
     kind_display = serializers.CharField(
         source='get_kind_display', read_only=True
     )
@@ -1128,7 +1173,7 @@ class OrganizerContactSerializer(serializers.ModelSerializer):
         return data
 
 
-class WebhookSerializer(serializers.ModelSerializer):
+class WebhookSerializer(PublicModelSerializer):
     """Addresses notified of the public events (superadmins only)."""
     # Not URLField: its validator rejects internal names (http://bot:8080).
     url = serializers.CharField(max_length=500)

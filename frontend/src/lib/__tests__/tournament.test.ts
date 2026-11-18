@@ -12,12 +12,15 @@ import {
 } from '../tournament'
 import type { Match, Tournament } from '../types'
 
+// Readable numbers in the tests; the API sends random string ids.
+const sid = (value: number | null) => (value === null ? null : `m${value}`)
+
 function match(id: number, round: number, position: number, next: number | null = null): Match {
   return {
-    id,
-    tournament: 1,
-    game: 1,
-    stage: 1,
+    id: `m${id}`,
+    tournament: 't1',
+    game: 'g1',
+    stage: 's1',
     stage_name: 'Playoffs',
     group: null,
     group_name: null,
@@ -30,7 +33,7 @@ function match(id: number, round: number, position: number, next: number | null 
     status: 'scheduled',
     is_bye: false,
     winner: null,
-    next_match: next,
+    next_match: sid(next),
     next_match_slot: next ? 1 : null,
     loser_next_match: null,
     loser_next_match_slot: null,
@@ -78,7 +81,7 @@ describe('layoutBracket', () => {
       { round: 2, matches: semis },
       { round: 3, matches: [final] },
     ])
-    const y = (id: number) => items.find((item) => item.match.id === id)!.y
+    const y = (id: number) => items.find((item) => item.match.id === sid(id))!.y
     expect(y(5)).toBe((y(1) + y(2)) / 2)
     expect(y(6)).toBe((y(3) + y(4)) / 2)
     expect(y(7)).toBe((y(5) + y(6)) / 2)
@@ -99,7 +102,7 @@ describe('layoutBracket', () => {
 describe('layoutDoubleBracket', () => {
   it('draws upper, lower and grand final as one bracket', () => {
     // 4 teams: the semifinal losers meet in the lower bracket.
-    const side = (m: Match, bracket: Match['bracket'], loser: number | null = null) => ({ ...m, bracket, loser_next_match: loser })
+    const side = (m: Match, bracket: Match['bracket'], loser: number | null = null) => ({ ...m, bracket, loser_next_match: sid(loser) })
     const sections = [
       { group: null, bracket: 'upper' as const, rounds: [
         { round: 1, matches: [side(match(1, 1, 1, 3), 'upper', 4), side(match(2, 1, 2, 3), 'upper', 4)] },
@@ -112,12 +115,12 @@ describe('layoutDoubleBracket', () => {
       { group: null, bracket: 'final' as const, rounds: [{ round: 1, matches: [side(match(6, 1, 1), 'final')] }] },
     ]
     const { items, lines, headers } = layoutDoubleBracket(sections)
-    const at = (id: number) => items.find((item) => item.match.id === id)!
+    const at = (id: number) => items.find((item) => item.match.id === sid(id))!
     const column = (id: number) => at(id).x / (BOX_W + GAP_X)
     expect([1, 2, 3, 4, 5, 6].map(column)).toEqual([0, 0, 1, 0, 1, 2])
     expect(at(4).y).toBeGreaterThan(at(2).y)
     expect(at(6).y).toBe((at(3).y + at(5).y) / 2)
-    expect(lines.map((line) => line.id).sort()).toEqual([1, 2, 3, 4, 5])
+    expect(lines.map((line) => line.id).sort()).toEqual(['m1', 'm2', 'm3', 'm4', 'm5'])
     expect(headers).toHaveLength(5)
   })
 })
@@ -127,7 +130,7 @@ describe('layoutDoubleBracket with 8 teams', () => {
     const m = (id: number, round: number, position: number, bracket: Match['bracket'], next: number | null, loser: number | null = null) => ({
       ...match(id, round, position, next),
       bracket,
-      loser_next_match: loser,
+      loser_next_match: sid(loser),
     })
     const sections = [
       { group: null, bracket: 'upper' as const, rounds: [
@@ -144,7 +147,7 @@ describe('layoutDoubleBracket with 8 teams', () => {
       { group: null, bracket: 'final' as const, rounds: [{ round: 1, matches: [m(14, 1, 1, 'final', null)] }] },
     ]
     const { items } = layoutDoubleBracket(sections)
-    const column = (id: number) => items.find((item) => item.match.id === id)!.x / (BOX_W + GAP_X)
+    const column = (id: number) => items.find((item) => item.match.id === sid(id))!.x / (BOX_W + GAP_X)
     expect([1, 5, 7].map(column)).toEqual([0, 1, 3])
     expect([8, 10, 12, 13].map(column)).toEqual([0, 1, 2, 3])
     expect(column(14)).toBe(4)
@@ -152,16 +155,16 @@ describe('layoutDoubleBracket with 8 teams', () => {
 })
 
 describe('currentTournament', () => {
-  const base = { game: 1, start_date: '2026-11-01T00:00:00Z' } as Tournament
+  const base = { game: 'g1', start_date: '2026-11-01T00:00:00Z' } as Tournament
   it('prefers the ongoing tournament, then the next upcoming one', () => {
     const list = [
-      { ...base, id: 1, status: 'completed' },
-      { ...base, id: 2, status: 'upcoming', start_date: '2026-12-01T00:00:00Z' },
-      { ...base, id: 3, status: 'upcoming', start_date: '2026-11-15T00:00:00Z' },
+      { ...base, id: 't1', status: 'completed' },
+      { ...base, id: 't2', status: 'upcoming', start_date: '2026-12-01T00:00:00Z' },
+      { ...base, id: 't3', status: 'upcoming', start_date: '2026-11-15T00:00:00Z' },
     ] as Tournament[]
-    expect(currentTournament(list, 1)?.id).toBe(3)
-    expect(currentTournament([...list, { ...base, id: 4, status: 'ongoing' } as Tournament], 1)?.id).toBe(4)
-    expect(currentTournament(list, 2)).toBeUndefined()
+    expect(currentTournament(list, 'g1')?.id).toBe('t3')
+    expect(currentTournament([...list, { ...base, id: 't4', status: 'ongoing' } as Tournament], 'g1')?.id).toBe('t4')
+    expect(currentTournament(list, 'g2')).toBeUndefined()
   })
 })
 

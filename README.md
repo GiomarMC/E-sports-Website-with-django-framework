@@ -48,6 +48,11 @@ Interactive documentation: **`/api/docs/`** (Swagger) and `/api/redoc/`.
 The whole administration (superadmin and game admins) is done through these
 endpoints; the Django admin site is not used.
 
+`{id}` is always the random **public id** of the object (12 letters and
+digits, e.g. `b6crSpIMi8A1`), never the database id: URLs cannot be
+guessed or counted. Filters (`?game=`, `?tournament=`, ...) and the ids in
+request bodies (`registration_ids`, `winner`, `game`...) use it too.
+
 | Endpoint | Access |
 |---|---|
 | `POST /api/admin/login/` · `POST /api/token/refresh/` (rotates the refresh token) · `POST /api/admin/logout/` · `GET /api/admin/me/` | — / admin |

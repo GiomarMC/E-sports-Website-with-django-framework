@@ -8,6 +8,7 @@ import type {
   ContactInfo,
   Game,
   GroupStandings,
+  Id,
   Match,
   OrganizerContact,
   PaymentMethod,
@@ -39,15 +40,15 @@ const LIVE = { refetchInterval: 30_000 }
 export const keys = {
   settings: ['settings'] as const,
   games: ['games'] as const,
-  game: (id: number) => ['games', id] as const,
+  game: (id: Id) => ['games', id] as const,
   tournaments: (params?: Params) => ['tournaments', params ?? {}] as const,
-  tournament: (id: number) => ['tournament', id] as const,
-  participants: (id: number) => ['tournament', id, 'participants'] as const,
-  schedule: (id: number) => ['tournament', id, 'schedule'] as const,
-  stages: (tournament: number) => ['stages', tournament] as const,
-  stage: (id: number) => ['stage', id] as const,
-  standings: (id: number) => ['stage', id, 'standings'] as const,
-  bracket: (id: number) => ['stage', id, 'bracket'] as const,
+  tournament: (id: Id) => ['tournament', id] as const,
+  participants: (id: Id) => ['tournament', id, 'participants'] as const,
+  schedule: (id: Id) => ['tournament', id, 'schedule'] as const,
+  stages: (tournament: Id) => ['stages', tournament] as const,
+  stage: (id: Id) => ['stage', id] as const,
+  standings: (id: Id) => ['stage', id, 'standings'] as const,
+  bracket: (id: Id) => ['stage', id, 'bracket'] as const,
   matches: (params?: Params) => ['matches', params ?? {}] as const,
   streams: (params?: Params) => ['streams', params ?? {}] as const,
   registrations: (params?: Params) => ['registrations', params ?? {}] as const,
@@ -55,7 +56,7 @@ export const keys = {
   me: ['me'] as const,
   contacts: ['contacts'] as const,
   webhooks: ['webhooks'] as const,
-  paymentMethods: (game: number) => ['payment-methods', game] as const,
+  paymentMethods: (game: Id) => ['payment-methods', game] as const,
   organizerContacts: (params?: Params) => ['organizer-contacts', params ?? {}] as const,
 }
 
@@ -84,37 +85,37 @@ export const useSettings = () => useApiQuery<SiteSettings>(keys.settings, 'setti
 
 export const useGames = () => useApiQuery<Game[]>(keys.games, 'games/')
 
-export const useGame = (id: number) => useApiQuery<Game>(keys.game(id), `games/${id}/`, { enabled: id > 0 })
+export const useGame = (id: Id) => useApiQuery<Game>(keys.game(id), `games/${id}/`, { enabled: !!id })
 
 export const useTournaments = (params?: Params) =>
   useApiQuery<Tournament[]>(keys.tournaments(params), 'tournaments/', { params })
 
-export const useTournament = (id: number) =>
-  useApiQuery<Tournament>(keys.tournament(id), `tournaments/${id}/`, { enabled: id > 0 })
+export const useTournament = (id: Id) =>
+  useApiQuery<Tournament>(keys.tournament(id), `tournaments/${id}/`, { enabled: !!id })
 
-export const useParticipants = (id: number) =>
-  useApiQuery<PublicRegistration[]>(keys.participants(id), `tournaments/${id}/participants/`, { enabled: id > 0 })
+export const useParticipants = (id: Id) =>
+  useApiQuery<PublicRegistration[]>(keys.participants(id), `tournaments/${id}/participants/`, { enabled: !!id })
 
-export const useSchedule = (id: number) =>
-  useApiQuery<Match[]>(keys.schedule(id), `tournaments/${id}/schedule/`, { enabled: id > 0, ...LIVE })
+export const useSchedule = (id: Id) =>
+  useApiQuery<Match[]>(keys.schedule(id), `tournaments/${id}/schedule/`, { enabled: !!id, ...LIVE })
 
-export const useStages = (tournament: number) =>
-  useApiQuery<Stage[]>(keys.stages(tournament), 'stages/', { params: { tournament }, enabled: tournament > 0 })
+export const useStages = (tournament: Id) =>
+  useApiQuery<Stage[]>(keys.stages(tournament), 'stages/', { params: { tournament }, enabled: !!tournament })
 
-export const useStage = (id: number) => useApiQuery<StageDetail>(keys.stage(id), `stages/${id}/`, { enabled: id > 0 })
+export const useStage = (id: Id) => useApiQuery<StageDetail>(keys.stage(id), `stages/${id}/`, { enabled: !!id })
 
-export const useStandings = (id: number) =>
-  useApiQuery<GroupStandings[]>(keys.standings(id), `stages/${id}/standings/`, { enabled: id > 0, ...LIVE })
+export const useStandings = (id: Id) =>
+  useApiQuery<GroupStandings[]>(keys.standings(id), `stages/${id}/standings/`, { enabled: !!id, ...LIVE })
 
-export const useBracket = (id: number) =>
-  useApiQuery<BracketSection[]>(keys.bracket(id), `stages/${id}/bracket/`, { enabled: id > 0, ...LIVE })
+export const useBracket = (id: Id) =>
+  useApiQuery<BracketSection[]>(keys.bracket(id), `stages/${id}/bracket/`, { enabled: !!id, ...LIVE })
 
 export const useMatches = (params?: Params) => useApiQuery<Match[]>(keys.matches(params), 'matches/', { params, ...LIVE })
 
 export const useStreams = (params?: Params) => useApiQuery<Stream[]>(keys.streams(params), 'streams/', { params, ...LIVE })
 
-export const usePaymentMethods = (game: number) =>
-  useApiQuery<PaymentMethod[]>(keys.paymentMethods(game), 'payment-methods/', { params: { game }, enabled: game > 0 })
+export const usePaymentMethods = (game: Id) =>
+  useApiQuery<PaymentMethod[]>(keys.paymentMethods(game), 'payment-methods/', { params: { game }, enabled: !!game })
 
 /** ``{ tournament: id }`` for a tournament, ``{ general: true }`` for the
  * general contacts of the event. */
@@ -125,10 +126,10 @@ export const useContacts = () => useApiQuery<ContactInfo[]>(keys.contacts, 'cont
 
 export const useWebhooks = () => useApiQuery<Webhook[]>(keys.webhooks, 'webhooks/')
 
-export const useQuote = (tournament: number, players: number) =>
+export const useQuote = (tournament: Id, players: number) =>
   useApiQuery<Quote>(['quote', tournament, players], `tournaments/${tournament}/quote/`, {
     params: { players },
-    enabled: tournament > 0 && players > 0,
+    enabled: !!tournament && players > 0,
   })
 
 export const useRegistrationStatus = (code: string) =>
