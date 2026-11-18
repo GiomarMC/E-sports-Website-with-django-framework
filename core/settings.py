@@ -280,6 +280,12 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
+# The refresh token lives in an HttpOnly cookie that JavaScript cannot read
+# (an injected script cannot steal the session), sent only to /api/token/.
+REFRESH_COOKIE_NAME = 'esports_refresh'
+REFRESH_COOKIE_PATH = '/api/token/'
+REFRESH_COOKIE_SECURE = env.bool('REFRESH_COOKIE_SECURE', default=not DEBUG)
+
 SWAGGER_SETTINGS = {
     'USE_SESSION_AUTH': False,
     'SECURITY_DEFINITIONS': {

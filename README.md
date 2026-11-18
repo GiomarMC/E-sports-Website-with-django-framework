@@ -48,6 +48,14 @@ Interactive documentation: **`/api/docs/`** (Swagger) and `/api/redoc/`.
 The whole administration (superadmin and game admins) is done through these
 endpoints; the Django admin site is not used.
 
+**Admin session:** login returns the JWT access token (15 min) in the body
+and the refresh token **only** in an `HttpOnly`, `Secure`,
+`SameSite=Strict` cookie limited to `/api/token/`, so JavaScript (or an
+injected script) can never read it. The frontend keeps the access token in
+memory and gets a new one with `POST /api/token/refresh/` (the browser sends
+the cookie); refresh, logout and login reject an `Origin` that is not the
+site. Send `Authorization: Bearer <access>` on the admin endpoints.
+
 `{id}` is always the random **public id** of the object (12 letters and
 digits, e.g. `b6crSpIMi8A1`), never the database id: URLs cannot be
 guessed or counted. Filters (`?game=`, `?tournament=`, ...) and the ids in
@@ -55,7 +63,7 @@ request bodies (`registration_ids`, `winner`, `game`...) use it too.
 
 | Endpoint | Access |
 |---|---|
-| `POST /api/admin/login/` · `POST /api/token/refresh/` (rotates the refresh token) · `POST /api/admin/logout/` · `GET /api/admin/me/` | — / admin |
+| `POST /api/admin/login/` · `POST /api/token/refresh/` (rotates the refresh token) · `POST /api/token/logout/` · `GET /api/admin/me/` | — / admin |
 | `GET /api/registrations/{id}/voucher/?t=` (signed link from the admin list, valid 1 hour) | signed link |
 | `GET,POST /api/admin/` · `PATCH,DELETE /api/admin/{id}/` · `PUT /api/admin/{id}/games/` · `POST /api/admin/{id}/reset-password/` | superadmin |
 | `GET,PATCH /api/settings/` | public / superadmin |
