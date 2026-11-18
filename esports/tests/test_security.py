@@ -346,7 +346,7 @@ class PublicIdTestCase(APITestCase):
         self.assertEqual(detail.data['id'], self.tournament.public_id)
         self.assertEqual(detail.data['game'], self.tournament.game.public_id)
         self.assertEqual(
-            [r['id'] for r in participants.data],
+            [r['id'] for r in participants.data['results']],
             [self.registration.public_id],
         )
 

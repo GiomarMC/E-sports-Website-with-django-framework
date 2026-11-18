@@ -26,7 +26,7 @@ import {
   MatchStrip,
   StreamEmbed,
 } from '../../components/tournament'
-import { Badge, Button, cx, EmptyState, ErrorState, Select, Skeleton, Tabs, TeamLogo } from '../../components/ui'
+import { Badge, Button, cx, EmptyState, ErrorState, Pagination, Select, Skeleton, Tabs, TeamLogo } from '../../components/ui'
 import {
   formatDate,
   formatDay,
@@ -38,9 +38,10 @@ import {
   tournamentStatusLabel,
 } from '../../lib/format'
 import {
+  TEAMS_PAGE_SIZE,
   useBracket,
   useGame,
-  useParticipants,
+  useParticipantsPage,
   useSchedule,
   useStages,
   useStandings,
@@ -121,7 +122,7 @@ export default function GamePage() {
               <NoTournament />
             ) : (
               <>
-                {tab === 'equipos' && selected && <Participants tournament={selected} />}
+                {tab === 'equipos' && selected && <Participants key={selected.id} tournament={selected} />}
                 {tab === 'partidas' && selected && <Stages tournament={selected} />}
                 {tab === 'cronograma' && selected && <Schedule tournament={selected} />}
               </>
@@ -465,16 +466,17 @@ function OverviewMatches({ tournament, onTab }: { tournament: Tournament; onTab:
 
 /** A few confirmed teams with a link to the full list. */
 function TeamsPreview({ tournament, onTab }: { tournament: Tournament; onTab: (tab: Tab) => void }) {
-  const participants = useParticipants(tournament.id)
-  const list = participants.data ?? []
-  if (!list.length) return null
+  // The first page is shared with the "Equipos" tab (same cache).
+  const participants = useParticipantsPage(tournament.id, 1)
+  const total = participants.data?.count ?? 0
+  if (!total) return null
   const team = tournament.type_of_game === 'team'
-  const shown = list.slice(0, 8)
+  const shown = (participants.data?.results ?? []).slice(0, 8)
   return (
     <section>
       <div className="mb-4 flex items-end justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold">
-          {list.length} {team ? (list.length === 1 ? 'equipo confirmado' : 'equipos confirmados') : list.length === 1 ? 'jugador confirmado' : 'jugadores confirmados'}
+          {total} {team ? (total === 1 ? 'equipo confirmado' : 'equipos confirmados') : total === 1 ? 'jugador confirmado' : 'jugadores confirmados'}
         </h2>
         <button onClick={() => onTab('equipos')} className="inline-flex items-center gap-1.5 text-sm text-ink-300 transition hover:text-ink-100">
           Ver todos <ArrowRight size={14} />
@@ -488,8 +490,8 @@ function TeamsPreview({ tournament, onTab }: { tournament: Tournament; onTab: (t
           </li>
         ))}
       </ul>
-      {list.length > shown.length && (
-        <p className="mt-2 text-sm text-ink-400">y {list.length - shown.length} más.</p>
+      {total > shown.length && (
+        <p className="mt-2 text-sm text-ink-400">y {total - shown.length} más.</p>
       )}
     </section>
   )
@@ -555,8 +557,13 @@ function BasesCard({ url }: { url: string }) {
 // -------------------------------------------------------- participants
 
 function Participants({ tournament }: { tournament: Tournament }) {
-  const participants = useParticipants(tournament.id)
+  const [page, setPage] = useState(1)
+  const participants = useParticipantsPage(tournament.id, page)
   const [showRoster, setShowRoster] = useState(true)
+  const changePage = (next: number) => {
+    setPage(next)
+    document.getElementById('participantes')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   if (participants.isPending) {
     return (
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -566,7 +573,7 @@ function Participants({ tournament }: { tournament: Tournament }) {
       </div>
     )
   }
-  if (!participants.data?.length) {
+  if (!participants.data?.count) {
     return (
       <EmptyState
         icon={<UsersThree size={24} />}
@@ -584,10 +591,10 @@ function Participants({ tournament }: { tournament: Tournament }) {
   }
   const team = tournament.type_of_game === 'team'
   return (
-    <section>
+    <section id="participantes" className="scroll-mt-24">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-2xl font-semibold">
-          {participants.data.length} {team ? 'equipos' : 'jugadores'} confirmados
+          {participants.data.count} {team ? 'equipos' : 'jugadores'} confirmados
         </h2>
         {team && (
           <label className="flex items-center gap-2 text-sm text-ink-300">
@@ -607,7 +614,7 @@ function Participants({ tournament }: { tournament: Tournament }) {
         animate="show"
         variants={{ show: { transition: { staggerChildren: 0.04 } } }}
       >
-        {participants.data.map((registration) => (
+        {participants.data.results.map((registration) => (
           <motion.div
             key={registration.id}
             variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}
@@ -634,6 +641,7 @@ function Participants({ tournament }: { tournament: Tournament }) {
           </motion.div>
         ))}
       </motion.div>
+      <Pagination page={page} count={participants.data.count} pageSize={TEAMS_PAGE_SIZE} onChange={changePage} />
     </section>
   )
 }

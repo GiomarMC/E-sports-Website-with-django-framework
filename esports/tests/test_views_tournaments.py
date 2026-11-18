@@ -220,8 +220,8 @@ class TournamentViewSetTestCase(APITestCase):
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertNotIn('contact_email', response.data[0])
+        self.assertEqual(response.data['count'], 1)
+        self.assertNotIn('contact_email', response.data['results'][0])
 
 
 @override_settings(

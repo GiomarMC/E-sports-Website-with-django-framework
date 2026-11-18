@@ -45,8 +45,8 @@ export default function Dashboard() {
           to="/admin/inscripciones"
           icon={<ClipboardText size={22} />}
           label="Inscripciones por revisar"
-          value={pending.data?.length}
-          highlight={(pending.data?.length ?? 0) > 0}
+          value={pending.data?.count}
+          highlight={(pending.data?.count ?? 0) > 0}
           cta="Revisar"
         />
         <Stat to="/admin/torneos" icon={<CalendarCheck size={22} />} label="Matchs hoy" value={myToday.length} cta="Ver matchs" />

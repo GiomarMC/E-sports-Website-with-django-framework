@@ -29,12 +29,13 @@ import {
   Tabs,
   Textarea,
   TeamLogo,
+  Pagination,
 } from '../../components/ui'
 import { useAuth } from '../../auth/AuthProvider'
 import { PageHeader } from '../../layouts/AdminLayout'
 import { api, toFormData } from '../../lib/api'
 import { formatDate, formatMoney, registrationStatusLabel } from '../../lib/format'
-import { useApiMutation, useGames, useRegistrations, useTournament, useTournaments } from '../../lib/queries'
+import { TEAMS_PAGE_SIZE, useApiMutation, useGames, useRegistrations, useTournament, useTournaments } from '../../lib/queries'
 import { PaymentMethodsPanel } from './PaymentMethods'
 import type { Id, Member, Registration, RegistrationStatus, Tournament } from '../../lib/types'
 
@@ -97,12 +98,19 @@ export function RegistrationsPanel({ tournamentId }: { tournamentId?: Id }) {
   const [tournament, setTournament] = useState<Id>(tournamentId ?? '')
   const [search, setSearch] = useState('')
   const [openId, setOpenId] = useState<Id | null>(null)
+  const [page, setPage] = useState(1)
+  // Another filter shows other registrations: back to the first page.
+  const filter = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value)
+    setPage(1)
+  }
   const registrations = useRegistrations({
     status: status || undefined,
     tournament: tournamentId ?? (tournament || undefined),
     search: search.trim() || undefined,
+    page,
   })
-  const selected = registrations.data?.find((r) => r.id === openId) ?? null
+  const selected = registrations.data?.results.find((r) => r.id === openId) ?? null
 
   return (
     <div>
@@ -111,7 +119,7 @@ export function RegistrationsPanel({ tournamentId }: { tournamentId?: Id }) {
           {(['pending', 'confirmed', 'rejected', ''] as const).map((value) => (
             <button
               key={value || 'all'}
-              onClick={() => setStatus(value)}
+              onClick={() => filter(setStatus)(value)}
               className={cx(
                 'h-9 rounded-lg px-3 text-sm font-medium transition',
                 status === value ? 'bg-ink-700 text-ink-100' : 'text-ink-400 hover:text-ink-100',
@@ -122,7 +130,7 @@ export function RegistrationsPanel({ tournamentId }: { tournamentId?: Id }) {
           ))}
         </div>
         {!tournamentId && (
-          <Select value={tournament} onChange={(e) => setTournament(e.target.value)}>
+          <Select value={tournament} onChange={(e) => filter(setTournament)(e.target.value)}>
             <option value="">Todos los torneos</option>
             {(tournaments.data ?? []).map((t) => (
               <option key={t.id} value={t.id}>
@@ -135,7 +143,7 @@ export function RegistrationsPanel({ tournamentId }: { tournamentId?: Id }) {
           <MagnifyingGlass size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400" />
           <Input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => filter(setSearch)(e.target.value)}
             placeholder="Buscar equipo, nick o código"
             className="pl-10"
           />
@@ -150,37 +158,40 @@ export function RegistrationsPanel({ tournamentId }: { tournamentId?: Id }) {
         </div>
       ) : registrations.isError ? (
         <ErrorState message={registrations.error.message} onRetry={() => registrations.refetch()} />
-      ) : registrations.data.length === 0 ? (
+      ) : registrations.data.count === 0 ? (
         <EmptyState
           icon={<ClipboardText size={24} />}
           title={status === 'pending' ? 'Nada por revisar' : 'Sin inscripciones'}
           description={status === 'pending' ? 'Todas las inscripciones están revisadas.' : 'Prueba con otros filtros.'}
         />
       ) : (
-        <div className="surface divide-y divide-white/[0.05] overflow-hidden">
-          {registrations.data.map((registration) => (
-            <button
-              key={registration.id}
-              onClick={() => setOpenId(registration.id)}
-              className="grid w-full gap-3 px-4 py-4 text-left transition hover:bg-white/[0.02] sm:grid-cols-[1fr_auto_auto] sm:items-center"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <TeamLogo src={registration.logo} name={registration.display_name} size={40} />
-                <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {registration.display_name}
-                    {!registration.is_active && <span className="ml-2 text-xs text-ink-400">(deshabilitado)</span>}
-                  </p>
-                  <p className="truncate text-xs text-ink-400">
-                    {registration.tournament_name} · {registration.members.length} jugadores · {formatDate(registration.created_at, true)}
-                  </p>
+        <>
+          <div className="surface divide-y divide-white/[0.05] overflow-hidden">
+            {registrations.data.results.map((registration) => (
+              <button
+                key={registration.id}
+                onClick={() => setOpenId(registration.id)}
+                className="grid w-full gap-3 px-4 py-4 text-left transition hover:bg-white/[0.02] sm:grid-cols-[1fr_auto_auto] sm:items-center"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <TeamLogo src={registration.logo} name={registration.display_name} size={40} />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {registration.display_name}
+                      {!registration.is_active && <span className="ml-2 text-xs text-ink-400">(deshabilitado)</span>}
+                    </p>
+                    <p className="truncate text-xs text-ink-400">
+                      {registration.tournament_name} · {registration.members.length} jugadores · {formatDate(registration.created_at, true)}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <span className="font-mono text-sm">{formatMoney(registration.amount_due)}</span>
-              <Badge tone={statusTone[registration.status]}>{registrationStatusLabel[registration.status]}</Badge>
-            </button>
-          ))}
-        </div>
+                <span className="font-mono text-sm">{formatMoney(registration.amount_due)}</span>
+                <Badge tone={statusTone[registration.status]}>{registrationStatusLabel[registration.status]}</Badge>
+              </button>
+            ))}
+          </div>
+          <Pagination page={page} count={registrations.data.count} pageSize={TEAMS_PAGE_SIZE} onChange={setPage} />
+        </>
       )}
 
       <RegistrationDetail key={selected?.id ?? 0} registration={selected} onClose={() => setOpenId(null)} />
