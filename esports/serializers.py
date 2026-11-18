@@ -1,5 +1,4 @@
 import json
-from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.auth import authenticate
@@ -11,6 +10,7 @@ from PIL import Image
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 
+from . import webhooks
 from .models import (
     AdminGame, ContactInfo, CustomUser, Game, Match, MatchParticipant,
     MediaContent, OrganizerContact, PaymentMethod, Registration,
@@ -1193,26 +1193,12 @@ class WebhookSerializer(PublicModelSerializer):
             ]
 
     def validate_url(self, value):
-        # The data travels encrypted (https), except to a service of the
-        # same server: a name without dots (http://bot:8080) never leaves
-        # the internal Docker network.
+        # https only, except the internal services of WEBHOOK_INTERNAL_HOSTS
+        # (http://bot:8080), and never an address of the internal network.
         value = value.strip()
-        try:
-            parts = urlsplit(value)
-            parts.port  # Raises on an invalid port.
-        except ValueError:
-            parts = None
-        if not parts or parts.scheme not in ('http', 'https') \
-                or not parts.hostname:
-            raise serializers.ValidationError('Escribe una dirección válida.')
-        host = parts.hostname
-        internal = '.' not in host and host != 'localhost'
-        if not value.startswith('https://') and not internal \
-                and not settings.DEBUG:
-            raise serializers.ValidationError(
-                'La dirección debe empezar con https:// (o ser un servicio '
-                'interno, como http://bot:8080/events).'
-            )
+        reason = webhooks.blocked_reason(value)
+        if reason:
+            raise serializers.ValidationError(reason)
         return value
 
     def validate_events(self, value):

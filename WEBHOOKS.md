@@ -157,4 +157,11 @@ Usa el cuerpo **crudo** (tal como llegó), no el JSON ya interpretado.
 - Si no responde o devuelve `5xx` / `429`, se reintenta 2 veces (a los 3 y 15
   segundos). Otros `4xx` no se reintentan (por ejemplo, firma rechazada).
 - El panel muestra el resultado del último aviso de cada dirección.
-- La dirección debe ser `https://`.
+- La dirección debe ser `https://` y pública. Solo los servicios internos
+  de `WEBHOOK_INTERNAL_HOSTS` (por defecto `bot`) pueden usar `http://`
+  (`http://bot:8080/events`). Se rechaza cualquier dirección de la red interna
+  del servidor (`localhost`, `db`, `10.x`, `192.168.x`, `169.254.169.254`...),
+  también si un dominio apunta a ella, y no se siguen redirecciones: así nadie
+  puede usar los avisos para llegar a la base de datos u otros servicios
+  internos (SSRF). Se vuelve a comprobar en cada envío; si falla, el panel
+  muestra "Bloqueado".
