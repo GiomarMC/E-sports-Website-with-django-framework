@@ -8,13 +8,16 @@ built with ``SITE_URL`` (the domain), never with the server address.
 """
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
+import socket
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from django.conf import settings
 from django.db import connections, transaction
@@ -31,6 +34,75 @@ TIMEOUT_SECONDS = 5
 RETRY_DELAYS = (0, 3, 15)
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='webhooks')
+
+
+# ------------------------------------------------------------ addresses
+# The site makes these requests from inside the server: an address must
+# not reach the services that are only open to the internal network
+# (database, API, cloud metadata...). That attack is called SSRF.
+
+INVALID_URL = 'Escribe una dirección válida.'
+
+
+def internal_hosts():
+    """Internal services (docker names) that may receive the events."""
+    return {host.lower() for host in settings.WEBHOOK_INTERNAL_HOSTS}
+
+
+def addresses(host):
+    """IP addresses of ``host`` (empty when it does not resolve: then it
+    cannot be reached either)."""
+    try:
+        return {ipaddress.ip_address(host)}
+    except ValueError:
+        pass
+    try:
+        return {
+            ipaddress.ip_address(info[4][0].split('%')[0])
+            for info in socket.getaddrinfo(host, None)
+        }
+    except (socket.gaierror, UnicodeError, ValueError):
+        return set()
+
+
+def blocked_reason(url):
+    """Why the site must not send requests to ``url`` (None: allowed)."""
+    try:
+        parts = urlsplit(url)
+        parts.port  # Raises on an invalid port.
+    except ValueError:
+        return INVALID_URL
+    if parts.scheme not in ('http', 'https') or not parts.hostname:
+        return INVALID_URL
+    host = parts.hostname.lower()
+    if host in internal_hosts() or settings.DEBUG:
+        return None
+    if parts.scheme != 'https':
+        names = ', '.join(f'http://{h}' for h in sorted(internal_hosts()))
+        return (
+            'La dirección debe empezar con https:// (o ser un servicio '
+            f'interno permitido: {names or "ninguno"}).'
+        )
+    if any(not ip.is_global for ip in addresses(host)):
+        return 'La dirección apunta a la red interna del servidor.'
+    return None
+
+
+class NoRedirect(HTTPRedirectHandler):
+    """A receiver cannot send the request somewhere else (an allowed
+    address answering "go to http://db:5432" would skip the checks)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(
+            req.full_url, code, f'Redirección a {newurl}', headers, fp
+        )
+
+
+_opener = build_opener(NoRedirect)
+
+
+def urlopen(request, timeout):
+    return _opener.open(request, timeout=timeout)
 
 
 # ------------------------------------------------------------- payloads
@@ -176,6 +248,16 @@ def deliver_in_thread(hook, event, body):
 def deliver(hook, event, body, delays=RETRY_DELAYS):
     """POSTs ``body`` to the hook, retrying when it is down or fails on its
     side. Returns (ok, status) and saves the status in the hook."""
+    # Checked again on every delivery: the name may point to another IP
+    # since the address was saved.
+    reason = blocked_reason(hook.url)
+    if reason:
+        status = f'Bloqueado: {reason}'[:200]
+        logger.warning('Webhook %s blocked: %s', hook.name, reason)
+        Webhook.objects.filter(pk=hook.pk).update(
+            last_delivery_at=timezone.now(), last_status=status
+        )
+        return False, status
     timestamp = str(int(time.time()))
     request = Request(hook.url, data=body, method='POST', headers={
         'Content-Type': 'application/json',

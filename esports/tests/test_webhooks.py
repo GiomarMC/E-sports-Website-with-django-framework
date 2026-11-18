@@ -1,6 +1,8 @@
 import hashlib
 import hmac
+import ipaddress
 import json
+import socket
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
@@ -18,6 +20,22 @@ from esports.tests.factories import (
 )
 
 
+PUBLIC_IP = ipaddress.ip_address('93.184.215.14')
+
+
+class OfflineDNSMixin:
+    """Every name resolves to a public address without asking a real DNS
+    (fast tests that work offline)."""
+
+    def setUp(self):
+        patcher = mock.patch(
+            'esports.webhooks.addresses', return_value={PUBLIC_IP}
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        super().setUp()
+
+
 def ok_response():
     response = mock.MagicMock()
     response.__enter__.return_value.status = 200
@@ -26,7 +44,7 @@ def ok_response():
 
 @override_settings(SITE_URL='https://esports.example.com')
 @mock.patch('esports.webhooks.urlopen', return_value=ok_response())
-class WebhookEventsTestCase(APITestCase):
+class WebhookEventsTestCase(OfflineDNSMixin, APITestCase):
     """The site POSTs the public events to every subscribed webhook."""
 
     def setUp(self):
@@ -235,7 +253,7 @@ class WebhookEventsTestCase(APITestCase):
 
 
 @mock.patch('esports.webhooks.time.sleep')
-class WebhookDeliveryTestCase(APITestCase):
+class WebhookDeliveryTestCase(OfflineDNSMixin, APITestCase):
 
     def setUp(self):
         self.hook = Webhook.objects.create(
@@ -274,7 +292,7 @@ class WebhookDeliveryTestCase(APITestCase):
         self.assertEqual(self.hook.last_status, 'HTTP 401')
 
 
-class WebhookViewSetTestCase(APITestCase):
+class WebhookViewSetTestCase(OfflineDNSMixin, APITestCase):
 
     def setUp(self):
         self.superadmin = SuperAdminFactory()
@@ -386,3 +404,97 @@ class WebhookViewSetTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotEqual(response.data['secret'], hook.secret)
+
+
+class WebhookSSRFTestCase(APITestCase):
+    """A webhook cannot make the server call its own internal network."""
+
+    def setUp(self):
+        self.client.force_authenticate(user=SuperAdminFactory())
+        self.list_url = reverse('webhooks-list')
+
+    def create(self, url):
+        return self.client.post(
+            self.list_url, {'name': 'Bot', 'url': url}, format='json'
+        )
+
+    def test_internal_names_other_than_the_bot_are_rejected(self):
+        # Act
+        responses = [
+            self.create('http://db:5432/'),
+            self.create('http://backend:8000/api/'),
+            self.create('http://localhost:8000/'),
+        ]
+
+        # Assert
+        for response in responses:
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST
+            )
+            self.assertIn('url', response.data)
+
+    @override_settings(WEBHOOK_INTERNAL_HOSTS=['bot', 'notifier'])
+    def test_allowed_internal_services_are_configurable(self):
+        # Act
+        response = self.create('http://notifier:9000/events')
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_private_and_loopback_ips_are_rejected(self):
+        # Act
+        responses = [
+            self.create('https://127.0.0.1/hook'),
+            self.create('https://10.0.0.5/hook'),
+            self.create('https://192.168.1.10/hook'),
+            self.create('https://169.254.169.254/latest/meta-data/'),
+            self.create('https://[::1]/hook'),
+        ]
+
+        # Assert
+        for response in responses:
+            self.assertEqual(
+                response.status_code, status.HTTP_400_BAD_REQUEST
+            )
+
+    def test_name_that_resolves_to_the_internal_network_is_rejected(self):
+        # Arrange
+        private = [(socket.AF_INET, socket.SOCK_STREAM, 6, '',
+                    ('172.18.0.3', 0))]
+
+        # Act
+        with mock.patch('esports.webhooks.socket.getaddrinfo',
+                        return_value=private):
+            response = self.create('https://sneaky.example.com/hook')
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('red interna', str(response.data['url']))
+
+    def test_delivery_checks_the_address_again(self):
+        # Arrange: saved when the name pointed elsewhere.
+        hook = Webhook.objects.create(
+            name='Bot', url='https://changed.example.com/hook'
+        )
+        private = {ipaddress.ip_address('10.1.2.3')}
+
+        # Act
+        with mock.patch('esports.webhooks.addresses', return_value=private), \
+                mock.patch('esports.webhooks.urlopen') as urlopen:
+            ok, status_text = webhooks.deliver(hook, 'ping', b'{}')
+
+        # Assert
+        self.assertFalse(ok)
+        self.assertEqual(urlopen.call_count, 0)
+        self.assertTrue(status_text.startswith('Bloqueado'))
+
+    def test_redirects_are_not_followed(self):
+        # Arrange
+        request = webhooks.Request('https://bot.example.com/hook')
+
+        # Act / Assert
+        with self.assertRaises(HTTPError) as error:
+            webhooks.NoRedirect().redirect_request(
+                request, None, 302, 'Found', {}, 'http://db:5432/'
+            )
+        self.assertEqual(error.exception.code, 302)

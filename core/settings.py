@@ -299,6 +299,9 @@ if not SITE_URL and env.str('DOMAIN', default=''):
     SITE_URL = f"https://{env.str('DOMAIN')}"
 # Webhooks are delivered in the background, except in tests.
 WEBHOOKS_ASYNC = not TESTING
+# Internal services (docker names) that may receive the webhooks over plain
+# http. Any other address must be https and outside the internal network.
+WEBHOOK_INTERNAL_HOSTS = env.list('WEBHOOK_INTERNAL_HOSTS', default=['bot'])
 
 # Errors and warnings go to the container output (docker compose logs).
 LOGGING = {
