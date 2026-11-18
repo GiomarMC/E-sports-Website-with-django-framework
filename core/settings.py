@@ -241,6 +241,13 @@ CURRENCY = env.str('CURRENCY', default='PEN')
 MAX_UPLOAD_SIZE_MB = env.int('MAX_UPLOAD_SIZE_MB', default=5)
 
 REST_FRAMEWORK = {
+    # JSON only: the browsable HTML API (forms to try every endpoint) is a
+    # development tool.
+    'DEFAULT_RENDERER_CLASSES': (
+        ('rest_framework.renderers.JSONRenderer',
+         'rest_framework.renderers.BrowsableAPIRenderer')
+        if DEBUG else ('rest_framework.renderers.JSONRenderer',)
+    ),
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),

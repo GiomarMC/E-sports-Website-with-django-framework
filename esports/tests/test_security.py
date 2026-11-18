@@ -402,3 +402,56 @@ class PublicIdTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('registration_ids', response.data)
+
+
+@override_settings(MEDIA_ROOT=MEDIA_ROOT,
+                   PRIVATE_MEDIA_ROOT=PRIVATE_MEDIA_ROOT)
+class UploadNamesTestCase(APITestCase):
+    """Public files get a random name: the one of the player's computer
+    (with names, phones...) is not published."""
+
+    def setUp(self):
+        SiteSettingsFactory()
+        self.tournament = TournamentFactory(
+            game=GameFactory(min_players=5, max_players=7),
+            fee_per_player=Decimal('0.00'),
+        )
+
+    def register(self, logo):
+        return self.client.post(
+            reverse(
+                'tournaments-register',
+                kwargs={'pk': self.tournament.public_id},
+            ),
+            {
+                'team_name': 'Los Halcones',
+                'contact_email': 'team@example.com',
+                'contact_phone': '987654321',
+                'members': json.dumps(member_payload(5)),
+                'logo': logo,
+            },
+            format='multipart',
+        )
+
+    def test_logo_gets_a_random_name(self):
+        # Act
+        response = self.register(image_file('juan-perez-987654321.png'))
+
+        # Assert
+        self.assertEqual(
+            response.status_code, status.HTTP_201_CREATED, response.data
+        )
+        logo = Registration.objects.get(code=response.data['code']).logo
+        self.assertNotIn('juan', logo.name)
+        self.assertRegex(logo.name, r'^logos/[0-9a-f]{32}\.png$')
+
+    def test_fake_logo_is_rejected(self):
+        # Act
+        response = self.register(SimpleUploadedFile(
+            'logo.png', b'<html><script>alert(1)</script></html>',
+            content_type='image/png',
+        ))
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('logo', response.data)
