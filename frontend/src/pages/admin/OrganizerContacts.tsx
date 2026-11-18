@@ -4,7 +4,7 @@ import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Mod
 import { api } from '../../lib/api'
 import { contactKindLabel, contactValue } from '../../lib/format'
 import { useApiMutation, useOrganizerContacts } from '../../lib/queries'
-import type { ContactKind, OrganizerContact } from '../../lib/types'
+import type { ContactKind, Id, OrganizerContact } from '../../lib/types'
 
 const ICONS: Record<ContactKind, typeof Phone> = {
   whatsapp: WhatsappLogo,
@@ -33,7 +33,7 @@ export function OrganizerContactsPanel({
   title,
   description,
 }: {
-  tournamentId: number | null
+  tournamentId: Id | null
   title: string
   description: string
 }) {
@@ -150,7 +150,7 @@ function ContactForm({
   order,
   onClose,
 }: {
-  tournamentId: number | null
+  tournamentId: Id | null
   contact: OrganizerContact | null
   order: number
   onClose: () => void

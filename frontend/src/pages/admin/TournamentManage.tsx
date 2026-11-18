@@ -64,7 +64,7 @@ import {
   useStandings,
   useTournament,
 } from '../../lib/queries'
-import type { DrawResult, Match, Stage, StageType, Tournament } from '../../lib/types'
+import type { DrawResult, Id, Match, Stage, StageType, Tournament } from '../../lib/types'
 import { FormatWizard } from './FormatWizard'
 import { OrganizerContactsPanel } from './OrganizerContacts'
 import { PaymentMethodsPanel } from './PaymentMethods'
@@ -74,7 +74,7 @@ import { RegistrationSwitch, TournamentForm } from './Tournaments'
 type Tab = 'fases' | 'inscripciones' | 'pagos' | 'contacto'
 
 export default function TournamentManage() {
-  const tournamentId = Number(useParams().tournamentId)
+  const tournamentId = useParams().tournamentId ?? ''
   const tournament = useTournament(tournamentId)
   const { canManage } = useAuth()
   const [tab, setTab] = useState<Tab>('fases')
@@ -150,7 +150,7 @@ function StagesManager({ tournament }: { tournament: Tournament }) {
   const [search, setSearch] = useSearchParams()
   const [creating, setCreating] = useState(false)
   const [custom, setCustom] = useState(false)
-  const selectedId = Number(search.get('fase')) || stages.data?.[0]?.id || 0
+  const selectedId = search.get('fase') || stages.data?.[0]?.id || ''
   const selected = stages.data?.find((s) => s.id === selectedId)
 
   if (stages.isPending) return <Skeleton className="h-80" />
@@ -721,7 +721,7 @@ function NextStageNotice({
 function StageVisual({ stage, onMatch }: { stage: Stage; onMatch: (match: Match) => void }) {
   const bracket = useBracket(stage.id)
   const grouped = stage.stage_type === 'round_robin' || stage.stage_type === 'free_for_all'
-  const standings = useStandings(grouped ? stage.id : 0)
+  const standings = useStandings(grouped ? stage.id : '')
   if (bracket.isPending || (grouped && standings.isPending)) return <Skeleton className="h-72" />
   if (!grouped) {
     return (
@@ -996,11 +996,11 @@ function ResultModal({ match, onClose }: { match: Match; onClose: () => void }) 
   const participants = [...match.participants].sort((a, b) => a.slot - b.slot)
   const ffa = participants.length > 2
   // 'draw' only exists when the match allows ties (league with even Bo).
-  const [winner, setWinner] = useState<number | 'draw' | null>(
+  const [winner, setWinner] = useState<Id | 'draw' | null>(
     match.status === 'completed' && match.winner === null && match.can_draw ? 'draw' : match.winner,
   )
   const isDraw = winner === 'draw'
-  const [scores, setScores] = useState<Record<number, string>>(() =>
+  const [scores, setScores] = useState<Record<Id, string>>(() =>
     Object.fromEntries(
       participants.map((p) => [p.registration!, match.status === 'completed' ? String(p.score) : '']),
     ),
@@ -1050,7 +1050,7 @@ function ResultModal({ match, onClose }: { match: Match; onClose: () => void }) 
       {ffa ? (
         <div className="space-y-2">
           {participants.map((p) => (
-            <div key={p.id} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-ink-850 p-3">
+            <div key={p.slot} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-ink-850 p-3">
               <TeamLogo src={p.logo} name={p.registration_name ?? '?'} size={28} />
               <span className="flex-1 truncate text-sm font-medium">{p.registration_name}</span>
               <Input
@@ -1070,7 +1070,7 @@ function ResultModal({ match, onClose }: { match: Match; onClose: () => void }) 
               const active = winner === p.registration
               const card = (
                 <motion.button
-                  key={p.id}
+                  key={p.slot}
                   type="button"
                   whileTap={{ scale: 0.97 }}
                   onClick={() => setWinner(p.registration)}
@@ -1120,7 +1120,7 @@ function ResultModal({ match, onClose }: { match: Match; onClose: () => void }) 
             <p className="mb-2 text-sm font-medium text-ink-300">Marcador (opcional)</p>
             <div className="flex items-center gap-3">
               {participants.map((p, index) => (
-                <div key={p.id} className="flex items-center gap-3">
+                <div key={p.slot} className="flex items-center gap-3">
                   {index === 1 && <span className="text-ink-600">-</span>}
                   <Input
                     type="number"
@@ -1147,7 +1147,7 @@ function DrawModal({ stage, tournament, onClose }: { stage: Stage; tournament: T
   const participants = useParticipants(tournament.id)
   const [shuffle, setShuffle] = useState(true)
   const [manual, setManual] = useState(stage.stage_type === 'manual')
-  const [chosen, setChosen] = useState<number[]>([])
+  const [chosen, setChosen] = useState<Id[]>([])
   const [preview, setPreview] = useState<DrawResult | null>(null)
   const firstStage = stage.order === Math.min(...tournament.stages.map((s) => s.order))
   const grouped = stage.stage_type === 'round_robin' || stage.stage_type === 'free_for_all'
@@ -1185,7 +1185,7 @@ function DrawModal({ stage, tournament, onClose }: { stage: Stage; tournament: T
     onSuccess: onClose,
   })
 
-  const toggle = (id: number) =>
+  const toggle = (id: Id) =>
     setChosen((current) => (current.includes(id) ? current.filter((x) => x !== id) : [...current, id]))
 
   if (preview) {
@@ -1697,7 +1697,7 @@ function MatchForm({
     label: match?.label ?? '',
     best_of: match?.best_of ?? stage.best_of,
     scheduled_at: toInputDateTime(match?.scheduled_at),
-    slots: sorted.length ? sorted.map((p) => p.registration) : ([null, null] as (number | null)[]),
+    slots: sorted.length ? sorted.map((p) => p.registration) : ([null, null] as (Id | null)[]),
     next_match: match?.next_match ?? null,
     next_match_slot: match?.next_match_slot ?? 1,
     loser_next_match: match?.loser_next_match ?? null,
@@ -1801,7 +1801,7 @@ function MatchForm({
                 onChange={(e) =>
                   set(
                     'slots',
-                    form.slots.map((v, i) => (i === index ? (e.target.value ? Number(e.target.value) : null) : v)),
+                    form.slots.map((v, i) => (i === index ? e.target.value || null : v)),
                   )
                 }
               >
@@ -1834,7 +1834,7 @@ function MatchForm({
               <Select
                 id={id}
                 value={form.next_match ?? ''}
-                onChange={(e) => set('next_match', e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => set('next_match', e.target.value || null)}
               >
                 <option value="">Ninguno (fin)</option>
                 {others.map((m) => (
@@ -1858,7 +1858,7 @@ function MatchForm({
               <Select
                 id={id}
                 value={form.loser_next_match ?? ''}
-                onChange={(e) => set('loser_next_match', e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => set('loser_next_match', e.target.value || null)}
               >
                 <option value="">Queda eliminado</option>
                 {others.map((m) => (

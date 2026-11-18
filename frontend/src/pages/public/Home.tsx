@@ -8,7 +8,7 @@ import { tournamentMilestone, type Milestone } from '../../lib/countdown'
 import { formatDate, formatDay, formatMoney, formatTime, playersLabel } from '../../lib/format'
 import { useGames, useMatches, useSettings, useStreams, useTournaments } from '../../lib/queries'
 import { currentTournament } from '../../lib/tournament'
-import type { Game, SiteSettings, Tournament } from '../../lib/types'
+import type { Game, Id, SiteSettings, Tournament } from '../../lib/types'
 import { useNow } from '../../lib/useNow'
 
 const SEASON = new Date().getFullYear()
@@ -230,7 +230,7 @@ function LiveNow({ games }: { games: Game[] }) {
   const [main] = streams
   const shown = streams.slice(0, MAX_LIVE_EMBEDS)
   const hidden = streams.length - shown.length
-  const gameName = (id: number | null) => games.find((g) => g.id === id)?.name
+  const gameName = (id: Id | null) => games.find((g) => g.id === id)?.name
   return (
     <section>
       <SectionTitle

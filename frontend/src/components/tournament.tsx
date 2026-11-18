@@ -583,7 +583,7 @@ export function FreeForAllResult({ match, onClick }: { match: Match; onClick?: O
       ) : (
         <ol className="divide-y divide-white/[0.04]">
           {rows.map((row) => (
-            <li key={row.id} className={cx('flex h-9 items-center gap-2.5 px-3 text-sm', row.placement === 1 && 'bg-win-soft')}>
+            <li key={row.slot} className={cx('flex h-9 items-center gap-2.5 px-3 text-sm', row.placement === 1 && 'bg-win-soft')}>
               <span className="w-5 font-mono text-xs text-ink-400">{row.placement}</span>
               <TeamLogo src={row.logo} name={row.registration_name ?? '?'} size={20} />
               <span className="flex-1 truncate">{row.registration_name}</span>

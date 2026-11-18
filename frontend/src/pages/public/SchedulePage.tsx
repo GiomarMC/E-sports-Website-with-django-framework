@@ -5,13 +5,14 @@ import { cx, EmptyState, ErrorState, Skeleton, Tabs } from '../../components/ui'
 import { formatDay } from '../../lib/format'
 import { useGames, useMatches } from '../../lib/queries'
 import { groupByDay } from '../../lib/tournament'
+import type { Id } from '../../lib/types'
 
 type View = 'proximos' | 'resultados'
 
 export default function SchedulePage() {
   const games = useGames()
   const [view, setView] = useState<View>('proximos')
-  const [game, setGame] = useState<number | null>(null)
+  const [game, setGame] = useState<Id | null>(null)
   const matches = useMatches(
     view === 'proximos' ? { upcoming: true, game: game ?? undefined } : { status: 'completed', game: game ?? undefined },
   )

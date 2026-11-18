@@ -48,7 +48,7 @@ import {
   useStreams,
   useTournaments,
 } from '../../lib/queries'
-import type { Game, Stage, Tournament } from '../../lib/types'
+import type { Game, Id, Stage, Tournament } from '../../lib/types'
 import { tournamentMilestone } from '../../lib/countdown'
 import { currentTournament, groupByDay } from '../../lib/tournament'
 import { useNow } from '../../lib/useNow'
@@ -56,7 +56,7 @@ import { useNow } from '../../lib/useNow'
 type Tab = 'resumen' | 'reglas' | 'equipos' | 'partidas' | 'cronograma' | 'stream'
 
 export default function GamePage() {
-  const gameId = Number(useParams().gameId)
+  const gameId = useParams().gameId ?? ''
   const [search, setSearch] = useSearchParams()
   const game = useGame(gameId)
   const tournaments = useTournaments({ game: gameId })
@@ -64,7 +64,7 @@ export default function GamePage() {
 
   const selected = useMemo(() => {
     const list = tournaments.data ?? []
-    const requested = Number(search.get('torneo'))
+    const requested = search.get('torneo')
     return list.find((t) => t.id === requested) ?? currentTournament(list, gameId)
   }, [tournaments.data, search, gameId])
 
@@ -153,7 +153,7 @@ function GameHero({
   game: Game
   tournament?: Tournament
   tournaments: Tournament[]
-  onSelect: (id: number) => void
+  onSelect: (id: Id) => void
 }) {
   const now = useNow(30000)
   const { data: settings } = useSettings()
@@ -199,7 +199,7 @@ function GameHero({
               <Select
                 aria-label="Edición del torneo"
                 value={tournament.id}
-                onChange={(event) => onSelect(Number(event.target.value))}
+                onChange={(event) => onSelect(event.target.value)}
                 className="w-auto min-w-56"
               >
                 {tournaments.map((t) => (
@@ -281,7 +281,7 @@ function Overview({
   tournament?: Tournament
   onTab: (tab: Tab) => void
 }) {
-  const stages = useStages(tournament?.id ?? 0)
+  const stages = useStages(tournament?.id ?? '')
   const now = useNow(30000)
   const startsAt = tournament?.registration.starts_at
   const notYet = !!startsAt && Date.parse(startsAt) > now
@@ -664,7 +664,7 @@ function Stages({ tournament }: { tournament: Tournament }) {
 function StageView({ stage }: { stage: Stage }) {
   const bracket = useBracket(stage.id)
   const grouped = stage.stage_type === 'round_robin' || stage.stage_type === 'free_for_all'
-  const standings = useStandings(grouped ? stage.id : 0)
+  const standings = useStandings(grouped ? stage.id : '')
   const empty = bracket.data && bracket.data.length === 0
 
   return (
@@ -752,9 +752,9 @@ function Schedule({ tournament }: { tournament: Tournament }) {
 
 // ------------------------------------------------------------- streams
 
-function GameStreams({ gameId }: { gameId: number }) {
+function GameStreams({ gameId }: { gameId: Id }) {
   const streams = useStreams({ game: gameId })
-  const [active, setActive] = useState<number | null>(null)
+  const [active, setActive] = useState<Id | null>(null)
   if (streams.isPending) return <Skeleton className="aspect-video" />
   if (!streams.data?.length) {
     return (

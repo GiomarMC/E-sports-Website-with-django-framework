@@ -31,7 +31,9 @@ class GameViewSetTestCase(APITestCase):
         self.game = assignment.game
         self.other_game = GameFactory()
         self.list_url = reverse('games-list')
-        self.detail_url = reverse('games-detail', kwargs={'pk': self.game.pk})
+        self.detail_url = reverse(
+            'games-detail', kwargs={'pk': self.game.public_id}
+        )
 
     def test_public_list_hides_inactive_games(self):
         # Arrange
@@ -171,7 +173,7 @@ class GameViewSetTestCase(APITestCase):
     def test_game_admin_cannot_update_other_game(self):
         # Arrange
         self.client.force_authenticate(user=self.admin)
-        url = reverse('games-detail', kwargs={'pk': self.other_game.pk})
+        url = reverse('games-detail', kwargs={'pk': self.other_game.public_id})
 
         # Act
         response = self.client.patch(
@@ -224,7 +226,7 @@ class GameViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.post(
-            reverse('games-deactivate', kwargs={'pk': self.game.pk})
+            reverse('games-deactivate', kwargs={'pk': self.game.public_id})
         )
 
         # Assert
@@ -232,7 +234,7 @@ class GameViewSetTestCase(APITestCase):
         self.game.refresh_from_db()
         self.assertFalse(self.game.active)
         self.client.post(
-            reverse('games-activate', kwargs={'pk': self.game.pk})
+            reverse('games-activate', kwargs={'pk': self.game.public_id})
         )
         self.game.refresh_from_db()
         self.assertTrue(self.game.active)

@@ -43,7 +43,7 @@ def team_data(registration):
     if registration is None:
         return {'id': None, 'name': None, 'logo': None}
     return {
-        'id': registration.id,
+        'id': registration.public_id,
         'name': registration.display_name,
         'logo': absolute(registration.logo.url) if registration.logo
         else None,
@@ -52,7 +52,7 @@ def team_data(registration):
 
 def stream_data(stream):
     return {
-        'id': stream.id,
+        'id': stream.public_id,
         'title': stream.title,
         'platform': stream.platform,
         'url': stream.url,
@@ -62,9 +62,9 @@ def stream_data(stream):
 
 def game_data(game):
     return {
-        'id': game.id,
+        'id': game.public_id,
         'name': game.name,
-        'url': absolute(f'/juegos/{game.id}'),
+        'url': absolute(f'/juegos/{game.public_id}'),
     }
 
 
@@ -86,7 +86,7 @@ def match_data(match):
             team['placement'] = entry.placement
         teams.append(team)
     return {
-        'id': match.id,
+        'id': match.public_id,
         'label': match.label,
         'stage': stage.name,
         'group': match.group.name if match.group_id else None,
@@ -97,7 +97,9 @@ def match_data(match):
         'scheduled_at': (
             match.scheduled_at.isoformat() if match.scheduled_at else None
         ),
-        'tournament': {'id': tournament.id, 'name': tournament.name},
+        'tournament': {
+            'id': tournament.public_id, 'name': tournament.name,
+        },
         'game': game_data(tournament.game),
         'teams': teams,
         'streams': [
@@ -109,8 +111,10 @@ def match_data(match):
 
 def result_data(match, corrected=False):
     data = match_data(match)
+    winner_id = match.winner.public_id if match.winner_id else None
     winner = next(
-        (t for t in data['teams'] if t['id'] == match.winner_id), None
+        (t for t in data['teams']
+         if winner_id is not None and t['id'] == winner_id), None
     )
     data.update({
         'winner': winner,

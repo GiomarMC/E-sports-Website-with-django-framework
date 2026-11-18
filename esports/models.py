@@ -1,5 +1,6 @@
 import os
 import secrets
+import string
 import uuid
 from decimal import Decimal
 
@@ -40,13 +41,37 @@ def private_storage():
     return _private_storage
 
 
+PUBLIC_ID_ALPHABET = string.ascii_letters + string.digits
+PUBLIC_ID_LENGTH = 12
+
+
+def new_public_id():
+    """Random identifier used in the URLs and the API instead of the
+    database id: it cannot be guessed or counted (71 bits)."""
+    return ''.join(
+        secrets.choice(PUBLIC_ID_ALPHABET) for _ in range(PUBLIC_ID_LENGTH)
+    )
+
+
+class PublicIdModel(models.Model):
+    """The integer primary key stays internal (joins, foreign keys); the
+    outside world only sees ``public_id``."""
+    public_id = models.CharField(
+        max_length=PUBLIC_ID_LENGTH, unique=True, editable=False,
+        default=new_public_id,
+    )
+
+    class Meta:
+        abstract = True
+
+
 def voucher_path(instance, filename):
     # Random name: the original one (team name, phone...) is not kept.
     extension = os.path.splitext(filename)[1].lower()
     return f'vouchers/{uuid.uuid4().hex}{extension}'
 
 
-class CustomUser(AbstractUser):
+class CustomUser(AbstractUser, PublicIdModel):
     """Staff account. Players do not have accounts: they register through
     the public registration form of each tournament."""
     ROLE_CHOICES = (
@@ -120,7 +145,7 @@ def validate_date_range(start, end):
             )
 
 
-class Game(models.Model):
+class Game(PublicIdModel):
     TYPE_CHOICES = (
         ('individual', 'Individual'),
         ('team', 'Team'),
@@ -204,7 +229,7 @@ class AdminGame(models.Model):
         return f"{self.admin.username} - {self.game.name}"
 
 
-class PaymentMethod(models.Model):
+class PaymentMethod(PublicIdModel):
     """Where the players pay the registration of the tournaments of a game
     (digital payments only). A game can have several methods."""
     METHOD_CHOICES = (
@@ -276,7 +301,7 @@ def validate_payment_method(method, phone_number, bank_name,
     return errors
 
 
-class Tournament(models.Model):
+class Tournament(PublicIdModel):
     STATUS_CHOICES = (
         ('upcoming', 'Upcoming'),
         ('ongoing', 'Ongoing'),
@@ -347,7 +372,7 @@ class Tournament(models.Model):
         return self.fee_per_player * players
 
 
-class Registration(models.Model):
+class Registration(PublicIdModel):
     """A team (or a single player for individual games) registered in a
     tournament."""
     STATUS_CHOICES = (
@@ -403,14 +428,14 @@ class Registration(models.Model):
         if self.team_name:
             return self.team_name
         captain = self.captain
-        return captain.nickname if captain else f"Registration {self.pk}"
+        return captain.nickname if captain else 'Sin jugadores'
 
     @property
     def player_count(self):
         return self.members.count()
 
 
-class RegistrationMember(models.Model):
+class RegistrationMember(PublicIdModel):
     registration = models.ForeignKey(
         Registration, on_delete=models.CASCADE, related_name='members'
         )
@@ -432,7 +457,7 @@ class RegistrationMember(models.Model):
         return f"{self.nickname} ({self.registration})"
 
 
-class Stage(models.Model):
+class Stage(PublicIdModel):
     """A phase of a tournament. A tournament is built by chaining stages,
     e.g. groups -> single elimination, or a single free for all."""
     TYPE_CHOICES = (
@@ -521,7 +546,7 @@ class Stage(models.Model):
         )
 
 
-class StageGroup(models.Model):
+class StageGroup(PublicIdModel):
     stage = models.ForeignKey(
         Stage, on_delete=models.CASCADE, related_name='groups'
         )
@@ -559,7 +584,7 @@ class StageParticipant(models.Model):
         return f"{self.registration} in {self.stage}"
 
 
-class Match(models.Model):
+class Match(PublicIdModel):
     STATUS_CHOICES = (
         ('scheduled', 'Scheduled'),
         ('live', 'Live'),
@@ -680,7 +705,7 @@ class MatchParticipant(models.Model):
         return f"{name} (slot {self.slot})"
 
 
-class Stream(models.Model):
+class Stream(PublicIdModel):
     PLATFORM_CHOICES = (
         ('twitch', 'Twitch'),
         ('youtube', 'YouTube'),
@@ -710,7 +735,7 @@ class Stream(models.Model):
         return f"{self.get_platform_display()} - {self.title}"
 
 
-class MediaContent(models.Model):
+class MediaContent(PublicIdModel):
     MEDIA_TYPES = (
         ('image', 'Image'),
         ('video', 'Video')
@@ -730,7 +755,7 @@ class MediaContent(models.Model):
         return self.title
 
 
-class ContactInfo(models.Model):
+class ContactInfo(PublicIdModel):
     platform = models.CharField(max_length=50)
     link = models.URLField()
 
@@ -745,7 +770,7 @@ def webhook_secret():
     return secrets.token_hex(32)
 
 
-class Webhook(models.Model):
+class Webhook(PublicIdModel):
     """Address that receives a signed POST when something public happens
     in a tournament (a bot that announces it in Discord, for example).
     Another bot is connected by adding its address here, without code."""
@@ -777,7 +802,7 @@ class Webhook(models.Model):
         return not self.events or event in self.events
 
 
-class OrganizerContact(models.Model):
+class OrganizerContact(PublicIdModel):
     """How to reach the organizers: a WhatsApp number, a WhatsApp group,
     a phone or an email. Without tournament it is a general contact of the
     event; otherwise it belongs to that tournament."""

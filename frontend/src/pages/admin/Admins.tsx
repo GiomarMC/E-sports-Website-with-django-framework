@@ -19,7 +19,7 @@ import {
 import { PageHeader } from '../../layouts/AdminLayout'
 import { api } from '../../lib/api'
 import { useAdmins, useApiMutation, useGames } from '../../lib/queries'
-import type { AdminUser, Role } from '../../lib/types'
+import type { AdminUser, Id, Role } from '../../lib/types'
 
 export default function AdminsPage() {
   const { user } = useAuth()
@@ -128,7 +128,7 @@ export default function AdminsPage() {
   )
 }
 
-function GamePicker({ value, onChange }: { value: number[]; onChange: (ids: number[]) => void }) {
+function GamePicker({ value, onChange }: { value: Id[]; onChange: (ids: Id[]) => void }) {
   const games = useGames()
   return (
     <div className="grid gap-2 sm:grid-cols-2">
@@ -168,7 +168,7 @@ function AdminForm({ onClose }: { onClose: () => void }) {
     first_name: '',
     last_name: '',
     email: '',
-    game_ids: [] as number[],
+    game_ids: [] as Id[],
   })
   const set = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [field]: value }))
   const save = useApiMutation({

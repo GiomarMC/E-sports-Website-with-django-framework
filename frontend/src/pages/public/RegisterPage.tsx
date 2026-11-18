@@ -49,7 +49,7 @@ const emptyMember = (): MemberForm => ({
 })
 
 export default function RegisterPage() {
-  const tournamentId = Number(useParams().tournamentId)
+  const tournamentId = useParams().tournamentId ?? ''
   const tournament = useTournament(tournamentId)
   const [result, setResult] = useState<{ response: RegisterResponse; name: string } | null>(null)
 

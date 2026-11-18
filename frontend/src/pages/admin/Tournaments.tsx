@@ -122,7 +122,7 @@ export function TournamentForm({ tournament, onClose }: { tournament: Tournament
   const games = useGames()
   const managed = (games.data ?? []).filter((g) => canManage(g.id))
   const [form, setForm] = useState({
-    game: tournament?.game ?? 0,
+    game: tournament?.game ?? '',
     name: tournament?.name ?? '',
     description: tournament?.description ?? '',
     start_date: toInputDateTime(tournament?.start_date),
@@ -188,7 +188,7 @@ export function TournamentForm({ tournament, onClose }: { tournament: Tournament
         {!tournament && (
           <Field label="Juego" error={errors.game} className="sm:col-span-2">
             {(id) => (
-              <Select id={id} value={form.game || managed[0]?.id || ''} onChange={(e) => set('game', Number(e.target.value))}>
+              <Select id={id} value={form.game || managed[0]?.id || ''} onChange={(e) => set('game', e.target.value)}>
                 {managed.map((game) => (
                   <option key={game.id} value={game.id}>
                     {game.name}

@@ -1,5 +1,5 @@
 // Pure tournament helpers (no React): shared by pages and unit tests.
-import type { BracketSection, Match, Tournament } from './types'
+import type { BracketSection, Id, Match, Tournament } from './types'
 
 const ROUND_LABELS: Record<string, string> = {
   Final: 'Final',
@@ -51,7 +51,7 @@ type Rounds = BracketSection['rounds']
 
 /** Places the rounds in columns from ``top``: each match is centered between
  * the matches that feed it (``next_match``), like Liquipedia brackets. */
-function placeRounds(rounds: Rounds, columns: number[], top: number, placed: Map<number, Placed>) {
+function placeRounds(rounds: Rounds, columns: number[], top: number, placed: Map<Id, Placed>) {
   const slot = BOX_H + GAP_Y
   rounds.forEach((round, index) => {
     let lastY = -Infinity
@@ -68,7 +68,7 @@ function placeRounds(rounds: Rounds, columns: number[], top: number, placed: Map
 }
 
 /** Lines from each match to the one its winner goes to. */
-function connect(placed: Map<number, Placed>) {
+function connect(placed: Map<Id, Placed>) {
   return [...placed.values()].flatMap((p) => {
     const target = p.match.next_match ? placed.get(p.match.next_match) : undefined
     if (!target) return []
@@ -87,7 +87,7 @@ function bottom(items: Placed[]) {
 
 /** Positions the matches of a single bracket, one round per column. */
 export function layoutBracket(rounds: Rounds) {
-  const placed = new Map<number, Placed>()
+  const placed = new Map<Id, Placed>()
   placeRounds(rounds, rounds.map((_, index) => index), 0, placed)
   const items = [...placed.values()]
   const width = rounds.length * (BOX_W + GAP_X) - GAP_X
@@ -113,7 +113,7 @@ export function layoutDoubleBracket(sections: BracketSection[]) {
   const lastColumn = Math.max(-1, ...upperColumns, ...lowerColumns)
   const finalColumns = final.map((_, index) => lastColumn + 1 + index)
 
-  const placed = new Map<number, Placed>()
+  const placed = new Map<Id, Placed>()
   placeRounds(upper, upperColumns, ROUND_HEADER, placed)
   const lowerHeader = upper.length ? bottom([...placed.values()]) + 8 : 0
   placeRounds(lower, lowerColumns, lowerHeader + ROUND_HEADER, placed)
@@ -133,7 +133,7 @@ export function layoutDoubleBracket(sections: BracketSection[]) {
 }
 
 /** Tournament shown for a game: ongoing first, then upcoming, then the latest. */
-export function currentTournament(tournaments: Tournament[], gameId: number) {
+export function currentTournament(tournaments: Tournament[], gameId: Id) {
   const own = tournaments.filter((t) => t.game === gameId && t.status !== 'canceled')
   return (
     own.find((t) => t.status === 'ongoing') ??

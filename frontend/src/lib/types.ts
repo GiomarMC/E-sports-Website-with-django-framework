@@ -12,14 +12,18 @@ export type Role = 'admin' | 'superadmin'
 export type PaymentMethodType = 'yape' | 'plin' | 'bank_transfer' | 'other'
 export type ContactKind = 'whatsapp' | 'whatsapp_group' | 'phone' | 'email' | 'link'
 
+/** Random public id of an object (never the database id: it cannot be
+ * guessed or counted). */
+export type Id = string
+
 export interface TournamentSummary {
-  id: number
+  id: Id
   name: string
   status: TournamentStatus
 }
 
 export interface Game {
-  id: number
+  id: Id
   name: string
   description: string
   type_of_game: GameType
@@ -34,8 +38,8 @@ export interface Game {
 
 /** Where the registration of the tournaments of a game is paid. */
 export interface PaymentMethod {
-  id: number
-  game: number
+  id: Id
+  game: Id
   method: PaymentMethodType
   method_display: string
   holder_name: string
@@ -51,7 +55,7 @@ export interface PaymentMethod {
 }
 
 export interface StageSummary {
-  id: number
+  id: Id
   name: string
   order: number
   stage_type: StageType
@@ -67,8 +71,8 @@ export interface RegistrationWindow {
 }
 
 export interface Tournament {
-  id: number
-  game: number
+  id: Id
+  game: Id
   game_name: string
   type_of_game: GameType
   min_players: number
@@ -94,7 +98,7 @@ export interface PublicMember {
 }
 
 export interface PublicRegistration {
-  id: number
+  id: Id
   display_name: string
   team_name: string
   logo: string | null
@@ -103,7 +107,7 @@ export interface PublicRegistration {
 }
 
 export interface Member {
-  id?: number
+  id?: Id
   full_name: string
   student_code: string
   nickname: string
@@ -117,8 +121,8 @@ export interface Member {
 }
 
 export interface Registration {
-  id: number
-  tournament: number
+  id: Id
+  tournament: Id
   tournament_name: string
   display_name: string
   team_name: string
@@ -142,7 +146,7 @@ export interface Registration {
 
 export interface RegistrationStatusInfo {
   code: string
-  tournament: number
+  tournament: Id
   tournament_name: string
   display_name: string
   amount_due: string
@@ -154,7 +158,7 @@ export interface RegistrationStatusInfo {
 
 /** Public search result: only public data (no code, no contact data). */
 export interface RegistrationLookupItem extends Omit<RegistrationStatusInfo, 'code'> {
-  id: number
+  id: Id
   game_name: string
 }
 
@@ -181,7 +185,7 @@ export interface Quote {
 }
 
 export interface Stage extends StageSummary {
-  tournament: number
+  tournament: Id
   best_of: number
   final_best_of: number | null
   /** Double elimination: best of of the lower bracket (null = best_of). */
@@ -199,7 +203,7 @@ export interface Stage extends StageSummary {
 }
 
 export interface StageGroup {
-  id: number
+  id: Id
   name: string
   order: number
   participants: PublicRegistration[]
@@ -212,17 +216,16 @@ export interface StageDetail extends Stage {
 
 export interface DrawResult extends StageDetail {
   /** Registrations in seed order (send them back to keep a preview). */
-  seeding: number[]
+  seeding: Id[]
   /** Double elimination: teams that start in the lower bracket. */
-  lower_seeding: number[]
+  lower_seeding: Id[]
   bracket: BracketSection[]
   preview: boolean
 }
 
 export interface MatchParticipant {
-  id: number
   slot: number
-  registration: number | null
+  registration: Id | null
   registration_name: string | null
   logo: string | null
   score: number
@@ -230,23 +233,23 @@ export interface MatchParticipant {
 }
 
 export interface Stream {
-  id: number
+  id: Id
   title: string
   platform: Platform
   url: string
-  game: number | null
-  match: number | null
+  game: Id | null
+  match: Id | null
   is_live: boolean
   created_at: string
 }
 
 export interface Match {
-  id: number
-  tournament: number
-  game: number
-  stage: number
+  id: Id
+  tournament: Id
+  game: Id
+  stage: Id
   stage_name: string
-  group: number | null
+  group: Id | null
   group_name: string | null
   bracket: BracketSide | ''
   round: number
@@ -256,10 +259,10 @@ export interface Match {
   best_of: number
   status: MatchStatus
   is_bye: boolean
-  winner: number | null
-  next_match: number | null
+  winner: Id | null
+  next_match: Id | null
   next_match_slot: number | null
-  loser_next_match: number | null
+  loser_next_match: Id | null
   loser_next_match_slot: number | null
   notes: string
   /** True when the match can end in a tie (league with an even best of). */
@@ -291,7 +294,7 @@ export interface StandingRow {
 
 export interface GroupStandings {
   group: string | null
-  group_id: number | null
+  group_id: Id | null
   standings: StandingRow[]
 }
 
@@ -303,7 +306,7 @@ export interface SiteSettings {
 }
 
 export interface AdminUser {
-  id: number
+  id: Id
   username: string
   first_name: string
   last_name: string
@@ -311,11 +314,11 @@ export interface AdminUser {
   nickname: string
   phone: string
   role: Role
-  games: { id: number; name: string }[]
+  games: { id: Id; name: string }[]
 }
 
 export interface MediaContent {
-  id: number
+  id: Id
   title: string
   file: string
   type: 'image' | 'video'
@@ -324,8 +327,8 @@ export interface MediaContent {
 
 /** Organizer contact: general (tournament null) or of a tournament. */
 export interface OrganizerContact {
-  id: number
-  tournament: number | null
+  id: Id
+  tournament: Id | null
   kind: ContactKind
   kind_display: string
   name: string
@@ -342,7 +345,7 @@ export interface OrganizerContact {
 export type WebhookEvent = 'match.scheduled' | 'match.started' | 'stream.live' | 'match.result'
 
 export interface Webhook {
-  id: number
+  id: Id
   name: string
   url: string
   /** Shared with the receiver to check the signature. */
@@ -356,7 +359,7 @@ export interface Webhook {
 }
 
 export interface ContactInfo {
-  id: number
+  id: Id
   platform: string
   link: string
 }

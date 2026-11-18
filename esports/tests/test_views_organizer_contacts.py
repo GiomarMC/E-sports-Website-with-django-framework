@@ -21,12 +21,12 @@ class OrganizerContactViewSetTestCase(APITestCase):
         )
         self.list_url = reverse('organizer-contacts-list')
         self.detail_url = reverse(
-            'organizer-contacts-detail', kwargs={'pk': self.contact.pk}
+            'organizer-contacts-detail', kwargs={'pk': self.contact.public_id}
         )
 
     def payload(self, **extra):
         return {
-            'tournament': self.tournament.pk, 'kind': 'whatsapp',
+            'tournament': self.tournament.public_id, 'kind': 'whatsapp',
             'name': 'Renzo Mamani', 'role': 'Organizador',
             'value': '987 654 321', **extra,
         }
@@ -37,7 +37,7 @@ class OrganizerContactViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.get(
-            self.list_url, {'tournament': self.tournament.pk}
+            self.list_url, {'tournament': self.tournament.public_id}
         )
 
         # Assert
@@ -53,7 +53,9 @@ class OrganizerContactViewSetTestCase(APITestCase):
         response = self.client.get(self.list_url, {'general': 'true'})
 
         # Assert
-        self.assertEqual([c['id'] for c in response.data], [self.general.pk])
+        self.assertEqual(
+            [c['id'] for c in response.data], [self.general.public_id]
+        )
         self.assertEqual(
             response.data[0]['link'], 'mailto:esports@unsa.edu.pe'
         )
@@ -67,16 +69,18 @@ class OrganizerContactViewSetTestCase(APITestCase):
 
         # Act
         admin = self.client.get(
-            self.list_url, {'tournament': self.tournament.pk}
+            self.list_url, {'tournament': self.tournament.public_id}
         )
         self.client.force_authenticate(None)
         public = self.client.get(
-            self.list_url, {'tournament': self.tournament.pk}
+            self.list_url, {'tournament': self.tournament.public_id}
         )
 
         # Assert
         self.assertEqual(len(admin.data), 2)
-        self.assertEqual([c['id'] for c in public.data], [self.contact.pk])
+        self.assertEqual(
+            [c['id'] for c in public.data], [self.contact.public_id]
+        )
 
     def test_public_list_hides_inactive_games(self):
         # Arrange
@@ -84,7 +88,9 @@ class OrganizerContactViewSetTestCase(APITestCase):
         OrganizerContactFactory(tournament=hidden)
 
         # Act
-        response = self.client.get(self.list_url, {'tournament': hidden.pk})
+        response = self.client.get(
+            self.list_url, {'tournament': hidden.public_id}
+        )
 
         # Assert
         self.assertEqual(response.data, [])
@@ -223,7 +229,7 @@ class OrganizerContactViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         url = reverse(
-            'organizer-contacts-detail', kwargs={'pk': self.general.pk}
+            'organizer-contacts-detail', kwargs={'pk': self.general.public_id}
         )
 
         # Act

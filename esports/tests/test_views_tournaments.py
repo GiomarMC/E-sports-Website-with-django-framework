@@ -30,12 +30,14 @@ class TournamentViewSetTestCase(APITestCase):
         self.other_tournament = TournamentFactory()
         self.list_url = reverse('tournaments-list')
         self.detail_url = reverse(
-            'tournaments-detail', kwargs={'pk': self.tournament.pk}
+            'tournaments-detail', kwargs={'pk': self.tournament.public_id}
         )
 
     def test_public_list_with_game_filter(self):
         # Act
-        response = self.client.get(self.list_url, {'game': self.game.pk})
+        response = self.client.get(
+            self.list_url, {'game': self.game.public_id}
+        )
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -66,7 +68,7 @@ class TournamentViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': self.game.pk,
+            'game': self.game.public_id,
             'name': 'Copa 2026',
             'start_date': '2026-11-20T15:00:00Z',
             'fee_per_player': '5.00',
@@ -90,7 +92,7 @@ class TournamentViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': GameFactory().pk,
+            'game': GameFactory().public_id,
             'name': 'Copa',
             'start_date': '2026-11-20T15:00:00Z',
         }
@@ -105,7 +107,7 @@ class TournamentViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': self.game.pk,
+            'game': self.game.public_id,
             'name': 'Copa',
             'start_date': '2026-11-20T15:00:00Z',
             'fee_per_player': '-1.00',
@@ -122,7 +124,9 @@ class TournamentViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         url = reverse(
-            'tournaments-detail', kwargs={'pk': self.other_tournament.pk}
+            'tournaments-detail', kwargs={
+                'pk': self.other_tournament.public_id
+            }
         )
 
         # Act
@@ -137,7 +141,7 @@ class TournamentViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.patch(
-            self.detail_url, {'game': GameFactory().pk}, format='json'
+            self.detail_url, {'game': GameFactory().public_id}, format='json'
         )
 
         # Assert
@@ -150,7 +154,7 @@ class TournamentViewSetTestCase(APITestCase):
         # Act
         response = self.client.post(reverse(
             'tournaments-close-registration',
-            kwargs={'pk': self.tournament.pk},
+            kwargs={'pk': self.tournament.public_id},
         ))
 
         # Assert
@@ -158,7 +162,7 @@ class TournamentViewSetTestCase(APITestCase):
         self.assertFalse(response.data['registration']['is_open'])
         response = self.client.post(reverse(
             'tournaments-open-registration',
-            kwargs={'pk': self.tournament.pk},
+            kwargs={'pk': self.tournament.public_id},
         ))
         self.assertTrue(response.data['registration']['is_open'])
 
@@ -169,7 +173,7 @@ class TournamentViewSetTestCase(APITestCase):
         # Act
         response = self.client.post(reverse(
             'tournaments-close-registration',
-            kwargs={'pk': self.tournament.pk},
+            kwargs={'pk': self.tournament.public_id},
         ))
 
         # Assert
@@ -177,7 +181,9 @@ class TournamentViewSetTestCase(APITestCase):
 
     def test_quote_calculates_total(self):
         # Arrange
-        url = reverse('tournaments-quote', kwargs={'pk': self.tournament.pk})
+        url = reverse(
+            'tournaments-quote', kwargs={'pk': self.tournament.public_id}
+        )
 
         # Act
         response = self.client.get(url, {'players': 6})
@@ -188,7 +194,9 @@ class TournamentViewSetTestCase(APITestCase):
 
     def test_quote_out_of_range_returns_400(self):
         # Arrange
-        url = reverse('tournaments-quote', kwargs={'pk': self.tournament.pk})
+        url = reverse(
+            'tournaments-quote', kwargs={'pk': self.tournament.public_id}
+        )
 
         # Act
         response = self.client.get(url, {'players': 20})
@@ -202,7 +210,9 @@ class TournamentViewSetTestCase(APITestCase):
         RegistrationFactory(tournament=self.tournament, status='pending')
         RegistrationFactory(tournament=self.tournament, is_active=False)
         url = reverse(
-            'tournaments-participants', kwargs={'pk': self.tournament.pk}
+            'tournaments-participants', kwargs={
+                'pk': self.tournament.public_id
+            }
         )
 
         # Act
@@ -231,7 +241,7 @@ class TournamentRegisterTestCase(APITestCase):
             game=self.game, fee_per_player=Decimal('5.00')
         )
         self.url = reverse(
-            'tournaments-register', kwargs={'pk': self.tournament.pk}
+            'tournaments-register', kwargs={'pk': self.tournament.public_id}
         )
 
     def multipart_payload(self, members, **extra):
@@ -397,7 +407,9 @@ class TournamentRegisterTestCase(APITestCase):
         tournament = TournamentFactory(
             game=IndividualGameFactory(), fee_per_player=Decimal('0')
         )
-        url = reverse('tournaments-register', kwargs={'pk': tournament.pk})
+        url = reverse(
+            'tournaments-register', kwargs={'pk': tournament.public_id}
+        )
         payload = {
             'contact_email': 'player@unsa.edu.pe',
             'contact_phone': '+51 912 345 678',
@@ -490,7 +502,7 @@ class TournamentRegisterTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(
             [link['id'] for link in response.data['join_links']],
-            [group.pk, clan.pk],
+            [group.public_id, clan.public_id],
         )
         self.assertEqual(
             response.data['join_links'][0]['link'],

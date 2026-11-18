@@ -31,7 +31,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
         self.method = PaymentMethodFactory(game=self.game)
         self.list_url = reverse('payment-methods-list')
         self.detail_url = reverse(
-            'payment-methods-detail', kwargs={'pk': self.method.pk}
+            'payment-methods-detail', kwargs={'pk': self.method.public_id}
         )
 
     def test_public_list_by_game_hides_inactive(self):
@@ -40,12 +40,14 @@ class PaymentMethodViewSetTestCase(APITestCase):
         PaymentMethodFactory()
 
         # Act
-        response = self.client.get(self.list_url, {'game': self.game.pk})
+        response = self.client.get(
+            self.list_url, {'game': self.game.public_id}
+        )
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [m['id'] for m in response.data], [self.method.pk]
+            [m['id'] for m in response.data], [self.method.public_id]
         )
         self.assertEqual(response.data[0]['method_display'], 'Yape')
 
@@ -75,7 +77,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': self.game.pk, 'method': 'yape',
+            'game': self.game.public_id, 'method': 'yape',
             'holder_name': 'Valeria Quispe', 'phone_number': '987 654 321',
         }
 
@@ -90,7 +92,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': self.game.pk, 'method': 'bank_transfer',
+            'game': self.game.public_id, 'method': 'bank_transfer',
             'holder_name': 'EPCC', 'bank_name': 'BCP',
             'account_number': '215-98765432-0-11',
             'cci': '00221519876543201155', 'qr_image': image_file('qr.png'),
@@ -130,7 +132,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=AdminUserFactory())
         payload = {
-            'game': self.game.pk, 'method': 'yape',
+            'game': self.game.public_id, 'method': 'yape',
             'holder_name': 'x', 'phone_number': '987654321',
         }
 
@@ -144,7 +146,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': self.game.pk, 'method': 'yape',
+            'game': self.game.public_id, 'method': 'yape',
             'holder_name': 'x', 'phone_number': '12345',
         }
 
@@ -159,7 +161,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
         # Arrange
         self.client.force_authenticate(user=self.admin)
         payload = {
-            'game': self.game.pk, 'method': 'bank_transfer',
+            'game': self.game.public_id, 'method': 'bank_transfer',
             'holder_name': 'x',
         }
 
@@ -203,7 +205,7 @@ class PaymentMethodViewSetTestCase(APITestCase):
 
         # Act
         response = self.client.patch(
-            self.detail_url, {'game': GameFactory().pk}, format='json'
+            self.detail_url, {'game': GameFactory().public_id}, format='json'
         )
 
         # Assert

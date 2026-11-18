@@ -38,7 +38,7 @@ def match(**extra):
         'scheduled_at': '2026-10-29T01:00:00+00:00',
         'tournament': {'id': 1, 'name': 'Copa Left4dead'},
         'game': {'id': 3, 'name': 'Left 4 Dead 2',
-                 'url': 'https://esports.example.com/juegos/3'},
+                 'url': 'https://esports.example.com/juegos/Z9MCKjjZMSLD'},
         'teams': [team(7, 'Los niños', logo='https://e.com/a.png'),
                   team(9, 'chinitos')],
         'streams': [{'id': 5, 'title': 'Grupo A', 'platform': 'twitch',

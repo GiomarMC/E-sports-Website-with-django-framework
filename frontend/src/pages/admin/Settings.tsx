@@ -4,7 +4,7 @@ import { Button, ErrorState, Field, Input, Skeleton, Toggle } from '../../compon
 import { PageHeader } from '../../layouts/AdminLayout'
 import { api } from '../../lib/api'
 import { useApiMutation, useContacts, useSettings } from '../../lib/queries'
-import type { SiteSettings } from '../../lib/types'
+import type { Id, SiteSettings } from '../../lib/types'
 import { OrganizerContactsPanel } from './OrganizerContacts'
 import { WebhooksPanel } from './Webhooks'
 
@@ -113,7 +113,7 @@ function Contacts() {
     },
   })
   const remove = useApiMutation({
-    request: (id: number) => api(`contacts/${id}/`, { method: 'DELETE' }),
+    request: (id: Id) => api(`contacts/${id}/`, { method: 'DELETE' }),
     invalidate: [['contacts']],
     success: 'Contacto eliminado',
   })

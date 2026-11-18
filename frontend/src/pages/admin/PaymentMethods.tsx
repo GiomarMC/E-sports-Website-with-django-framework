@@ -4,7 +4,7 @@ import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, Field, Input, Mod
 import { api, toFormData } from '../../lib/api'
 import { formatPhone, paymentMethodLabel } from '../../lib/format'
 import { useApiMutation, usePaymentMethods } from '../../lib/queries'
-import type { PaymentMethod, PaymentMethodType } from '../../lib/types'
+import type { Id, PaymentMethod, PaymentMethodType } from '../../lib/types'
 
 const ICONS = { yape: DeviceMobile, plin: DeviceMobile, bank_transfer: Bank, other: Wallet }
 
@@ -17,7 +17,7 @@ function summary(method: PaymentMethod) {
 
 /** Payment data of a game (Yape, Plin, bank account...) shown to the players
  * in the registration form of every tournament of the game. */
-export function PaymentMethodsPanel({ gameId, gameName, paid = true }: { gameId: number; gameName: string; paid?: boolean }) {
+export function PaymentMethodsPanel({ gameId, gameName, paid = true }: { gameId: Id; gameName: string; paid?: boolean }) {
   const methods = usePaymentMethods(gameId)
   const [editing, setEditing] = useState<PaymentMethod | 'new' | null>(null)
   const [deleting, setDeleting] = useState<PaymentMethod | null>(null)
@@ -135,7 +135,7 @@ function PaymentMethodForm({
   order,
   onClose,
 }: {
-  gameId: number
+  gameId: Id
   method: PaymentMethod | null
   order: number
   onClose: () => void

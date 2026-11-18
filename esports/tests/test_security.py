@@ -20,7 +20,8 @@ from esports.models import Registration
 from esports.tests.factories import (
     DEFAULT_PASSWORD, AdminGameFactory, GameFactory, RegistrationFactory,
     SiteSettingsFactory,
-    SuperAdminFactory, TournamentFactory, image_file, member_payload,
+    StageFactory, SuperAdminFactory, TournamentFactory, image_file,
+    member_payload,
     pdf_file,
 )
 
@@ -50,7 +51,7 @@ class PrivateVoucherTestCase(APITestCase):
             game=assignment.game, fee_per_player=Decimal('5.00')
         )
         self.register_url = reverse(
-            'tournaments-register', kwargs={'pk': self.tournament.pk}
+            'tournaments-register', kwargs={'pk': self.tournament.public_id}
         )
 
     def register(self, voucher):
@@ -65,7 +66,9 @@ class PrivateVoucherTestCase(APITestCase):
     def admin_voucher_url(self, registration):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(
-            reverse('registrations-detail', kwargs={'pk': registration.pk})
+            reverse(
+                'registrations-detail', kwargs={'pk': registration.public_id}
+            )
         )
         self.client.force_authenticate(user=None)
         return response.data['voucher']
@@ -102,7 +105,9 @@ class PrivateVoucherTestCase(APITestCase):
         # Arrange
         response = self.register(image_file())
         registration = Registration.objects.get(code=response.data['code'])
-        url = reverse('registrations-voucher', kwargs={'pk': registration.pk})
+        url = reverse(
+            'registrations-voucher', kwargs={'pk': registration.public_id}
+        )
 
         # Act
         response = self.client.get(url)
@@ -121,7 +126,7 @@ class PrivateVoucherTestCase(APITestCase):
             tournament=self.tournament, voucher=image_file()
         )
         token = self.admin_voucher_url(first).split('?t=')[1]
-        url = reverse('registrations-voucher', kwargs={'pk': second.pk})
+        url = reverse('registrations-voucher', kwargs={'pk': second.public_id})
 
         # Act
         response = self.client.get(f'{url}?t={token}')
@@ -277,7 +282,9 @@ class TokenRevocationTestCase(APITestCase):
 
         # Act
         reset = self.client.post(
-            reverse('admin-reset-password', kwargs={'pk': self.admin.pk}),
+            reverse(
+                'admin-reset-password', kwargs={'pk': self.admin.public_id}
+            ),
             {'new_password': 'Otra-clave-segura-2026'},
         )
         self.client.force_authenticate(user=None)
@@ -297,3 +304,101 @@ class DeploySafetyTestCase(APITestCase):
         self.assertFalse(settings.DEBUG)
         with self.assertRaises(CommandError):
             call_command('seed_demo')
+
+
+class PublicIdTestCase(APITestCase):
+    """The URLs and the API use a random public id: the database ids are
+    never shown and cannot be used to walk through the objects."""
+
+    def setUp(self):
+        SiteSettingsFactory()
+        self.tournament = TournamentFactory()
+        self.registration = RegistrationFactory(
+            tournament=self.tournament, status='confirmed'
+        )
+
+    def test_public_ids_are_random_and_unique(self):
+        # Arrange
+        others = [TournamentFactory() for _ in range(5)]
+
+        # Act
+        ids = [t.public_id for t in [self.tournament, *others]]
+
+        # Assert
+        self.assertEqual(len(set(ids)), len(ids))
+        for value in ids:
+            self.assertEqual(len(value), 12)
+            self.assertTrue(value.isalnum())
+            self.assertFalse(value.isdigit())
+
+    def test_responses_use_the_public_id(self):
+        # Act
+        detail = self.client.get(reverse(
+            'tournaments-detail', kwargs={'pk': self.tournament.public_id}
+        ))
+        participants = self.client.get(reverse(
+            'tournaments-participants',
+            kwargs={'pk': self.tournament.public_id},
+        ))
+
+        # Assert
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data['id'], self.tournament.public_id)
+        self.assertEqual(detail.data['game'], self.tournament.game.public_id)
+        self.assertEqual(
+            [r['id'] for r in participants.data],
+            [self.registration.public_id],
+        )
+
+    def test_database_id_does_not_find_the_object(self):
+        # Act
+        response = self.client.get(
+            f'/api/tournaments/{self.tournament.pk}/'
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_filter_by_database_id_finds_nothing(self):
+        # Act
+        by_pk = self.client.get(
+            reverse('tournaments-list'), {'game': self.tournament.game.pk}
+        )
+        by_public_id = self.client.get(
+            reverse('tournaments-list'),
+            {'game': self.tournament.game.public_id},
+        )
+
+        # Assert
+        self.assertEqual(by_pk.status_code, status.HTTP_200_OK)
+        self.assertEqual(by_pk.data, [])
+        self.assertEqual(
+            [t['id'] for t in by_public_id.data], [self.tournament.public_id]
+        )
+
+    def test_invalid_filters_do_not_break_the_api(self):
+        # Act
+        response = self.client.get(
+            reverse('matches-list'),
+            {'stage': "1' OR '1'='1", 'round': 'x'},
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('round', response.data)
+
+    def test_unknown_public_id_in_a_body_is_rejected(self):
+        # Arrange
+        stage = StageFactory(tournament=self.tournament)
+        self.client.force_authenticate(user=SuperAdminFactory())
+
+        # Act
+        response = self.client.post(
+            reverse('stages-draw', kwargs={'pk': stage.public_id}),
+            {'registration_ids': [str(self.registration.pk)]},
+            format='json',
+        )
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('registration_ids', response.data)

@@ -2,7 +2,7 @@ import { Bank, Check, Copy, DeviceMobile, QrCode, Wallet, Warning } from '@phosp
 import { useState } from 'react'
 import { formatMoney, formatPhone } from '../lib/format'
 import { usePaymentMethods } from '../lib/queries'
-import type { PaymentMethod } from '../lib/types'
+import type { Id, PaymentMethod } from '../lib/types'
 import { useToast } from './Toast'
 import { cx, Modal, Skeleton } from './ui'
 
@@ -91,7 +91,7 @@ function MethodCard({ method }: { method: PaymentMethod }) {
 
 /** "How to pay" box of the registration form: the payment methods of the
  * game of the tournament. */
-export function PaymentMethods({ gameId, amount, currency }: { gameId: number; amount: number; currency: string }) {
+export function PaymentMethods({ gameId, amount, currency }: { gameId: Id; amount: number; currency: string }) {
   const methods = usePaymentMethods(gameId)
   if (methods.isPending) return <Skeleton className="h-40" />
   if (methods.isError || !methods.data.length) {
