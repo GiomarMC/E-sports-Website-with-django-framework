@@ -16,6 +16,14 @@ export type ContactKind = 'whatsapp' | 'whatsapp_group' | 'phone' | 'email' | 'l
  * guessed or counted). */
 export type Id = string
 
+/** Paginated list of the API (``?page=2``). */
+export interface Paginated<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
+
 export interface TournamentSummary {
   id: Id
   name: string

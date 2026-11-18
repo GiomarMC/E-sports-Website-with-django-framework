@@ -1,4 +1,4 @@
-import { CircleNotch, Eye, EyeSlash, X } from '@phosphor-icons/react'
+import { CaretLeft, CaretRight, CircleNotch, Eye, EyeSlash, X } from '@phosphor-icons/react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   useEffect,
@@ -293,6 +293,45 @@ export function EmptyState({
       </div>
       {action}
     </div>
+  )
+}
+
+/** Previous / next page of a paginated list (hidden with a single page). */
+export function Pagination({
+  page,
+  count,
+  pageSize,
+  onChange,
+  className,
+}: {
+  page: number
+  count: number
+  pageSize: number
+  onChange: (page: number) => void
+  className?: string
+}) {
+  const pages = Math.ceil(count / pageSize)
+  if (pages <= 1) return null
+  const first = (page - 1) * pageSize + 1
+  const last = Math.min(page * pageSize, count)
+  return (
+    <nav aria-label="Paginación" className={cx('mt-5 flex items-center justify-between gap-3', className)}>
+      <p className="text-sm text-ink-400">
+        {first}–{last} de {count}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" size="sm" icon={<CaretLeft size={14} />} disabled={page <= 1} onClick={() => onChange(page - 1)}>
+          Anterior
+        </Button>
+        <span className="min-w-16 text-center font-mono text-sm text-ink-300">
+          {page} / {pages}
+        </span>
+        <Button variant="secondary" size="sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>
+          Siguiente
+          <CaretRight size={14} className="ml-1.5" />
+        </Button>
+      </div>
+    </nav>
   )
 }
 

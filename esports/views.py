@@ -26,6 +26,7 @@ from rest_framework_simplejwt.token_blacklist.models import (
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from esports import services, webhooks
+from esports.pagination import TEAM_ORDER, TeamPagination
 from esports.models import (
     AdminGame, ContactInfo, Game, Match, MediaContent, OrganizerContact,
     PaymentMethod,
@@ -512,13 +513,15 @@ class TournamentViewSet(PublicLookupMixin, ActionPermissionMixin,
 
     @action(detail=True, methods=['get'])
     def participants(self, request, pk=None):
-        """Confirmed and enabled participants."""
+        """Confirmed and enabled participants, 20 per page."""
         tournament = self.get_object()
         registrations = services.eligible_registrations(
             tournament
-        ).prefetch_related('members')
-        return Response(PublicRegistrationSerializer(
-            registrations, many=True, context={'request': request}
+        ).prefetch_related('members').order_by(*TEAM_ORDER)
+        paginator = TeamPagination()
+        page = paginator.paginate_queryset(registrations, request, view=self)
+        return paginator.get_paginated_response(PublicRegistrationSerializer(
+            page, many=True, context={'request': request}
         ).data)
 
     @action(detail=True, methods=['get'])
@@ -561,6 +564,7 @@ class RegistrationViewSet(PublicLookupMixin, ActionPermissionMixin,
     with ``POST /tournaments/{id}/register/``; later the admins can fix the
     team data and its players."""
     serializer_class = RegistrationSerializer
+    pagination_class = TeamPagination
     default_permissions = [IsGameAdmin]
     # ``voucher`` is checked with the signed link of the admin serializer:
     # images and PDFs are opened by the browser, without the JWT header.
@@ -602,7 +606,7 @@ class RegistrationViewSet(PublicLookupMixin, ActionPermissionMixin,
                 | Q(members__student_code__icontains=term)
                 | Q(members__full_name__icontains=term)
             ).distinct()
-        return registrations
+        return registrations.order_by(*TEAM_ORDER)
 
     @action(
         detail=False, methods=['get'],

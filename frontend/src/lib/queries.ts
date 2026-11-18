@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { api, ApiError, type RequestOptions } from './api'
 import { useToast } from '../components/Toast'
 import { useAdminScope } from './scope'
@@ -9,6 +9,7 @@ import type {
   Game,
   GroupStandings,
   Id,
+  Paginated,
   Match,
   OrganizerContact,
   PaymentMethod,
@@ -37,13 +38,16 @@ declare module '@tanstack/react-query' {
 // without reloading the page.
 const LIVE = { refetchInterval: 30_000 }
 
+/** Teams per page of the paginated lists (esports/pagination.py). */
+export const TEAMS_PAGE_SIZE = 20
+
 export const keys = {
   settings: ['settings'] as const,
   games: ['games'] as const,
   game: (id: Id) => ['games', id] as const,
   tournaments: (params?: Params) => ['tournaments', params ?? {}] as const,
   tournament: (id: Id) => ['tournament', id] as const,
-  participants: (id: Id) => ['tournament', id, 'participants'] as const,
+  participants: (id: Id, page?: number) => ['tournament', id, 'participants', page ?? 'all'] as const,
   schedule: (id: Id) => ['tournament', id, 'schedule'] as const,
   stages: (tournament: Id) => ['stages', tournament] as const,
   stage: (id: Id) => ['stage', id] as const,
@@ -65,6 +69,8 @@ interface QueryConfig {
   enabled?: boolean
   refetchInterval?: number
   retry?: boolean
+  /** Keep showing the current page while the next one loads. */
+  keepPrevious?: boolean
 }
 
 /** GET query aware of the data scope: the admin panel sends the session
@@ -72,11 +78,12 @@ interface QueryConfig {
  * the last element of the key so invalidating a prefix refreshes both. */
 function useApiQuery<T>(key: QueryKey, path: string, config: QueryConfig = {}) {
   const admin = useAdminScope()
-  const { params, enabled = true, ...options } = config
+  const { params, enabled = true, keepPrevious, ...options } = config
   return useQuery({
     queryKey: [...key, admin ? 'admin' : 'public'],
     queryFn: () => api<T>(path, { params, auth: admin }),
     enabled,
+    placeholderData: keepPrevious ? keepPreviousData : undefined,
     ...options,
   })
 }
@@ -93,8 +100,28 @@ export const useTournaments = (params?: Params) =>
 export const useTournament = (id: Id) =>
   useApiQuery<Tournament>(keys.tournament(id), `tournaments/${id}/`, { enabled: !!id })
 
-export const useParticipants = (id: Id) =>
-  useApiQuery<PublicRegistration[]>(keys.participants(id), `tournaments/${id}/participants/`, { enabled: !!id })
+/** One page (20) of the confirmed teams: the public lists. */
+export const useParticipantsPage = (id: Id, page: number) =>
+  useApiQuery<Paginated<PublicRegistration>>(keys.participants(id, page), `tournaments/${id}/participants/`, {
+    params: { page },
+    enabled: !!id,
+    keepPrevious: true,
+  })
+
+/** Every confirmed team (admin panel: draws, manual matches). Visitors
+ * only get pages of 20, admins can ask for all of them at once. */
+export function useParticipants(id: Id) {
+  const admin = useAdminScope()
+  return useQuery({
+    queryKey: [...keys.participants(id), admin ? 'admin' : 'public'],
+    queryFn: () =>
+      api<Paginated<PublicRegistration>>(`tournaments/${id}/participants/`, {
+        params: { page_size: 500 },
+        auth: admin,
+      }).then((data) => data.results),
+    enabled: !!id,
+  })
+}
 
 export const useSchedule = (id: Id) =>
   useApiQuery<Match[]>(keys.schedule(id), `tournaments/${id}/schedule/`, { enabled: !!id, ...LIVE })
@@ -149,11 +176,13 @@ export const useRegistrationLookup = (term: string) =>
 // ------------------------------------------------------------- admin
 // Only used inside the admin panel (always authenticated).
 
+/** Paginated (20 per page, ``params.page``). */
 export const useRegistrations = (params?: Params, enabled = true) =>
   useQuery({
     queryKey: keys.registrations(params),
-    queryFn: () => api<Registration[]>('registrations/', { params }),
+    queryFn: () => api<Paginated<Registration>>('registrations/', { params }),
     enabled,
+    placeholderData: keepPreviousData,
   })
 
 export const useAdmins = (enabled = true) =>

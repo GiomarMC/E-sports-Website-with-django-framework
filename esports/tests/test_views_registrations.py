@@ -57,9 +57,10 @@ class RegistrationViewSetTestCase(APITestCase):
         # Assert
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [r['id'] for r in response.data], [self.registration.public_id]
+            [r['id'] for r in response.data['results']],
+            [self.registration.public_id]
         )
-        self.assertIn('contact_email', response.data[0])
+        self.assertIn('contact_email', response.data['results'][0])
 
     def test_superadmin_lists_everything(self):
         # Arrange
@@ -69,7 +70,7 @@ class RegistrationViewSetTestCase(APITestCase):
         response = self.client.get(self.list_url)
 
         # Assert
-        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data['count'], 2)
 
     def test_list_filters_and_search(self):
         # Arrange
@@ -81,8 +82,10 @@ class RegistrationViewSetTestCase(APITestCase):
         by_search = self.client.get(self.list_url, {'search': 'mirac'})
 
         # Assert
-        self.assertEqual(len(by_status.data), 1)
-        self.assertEqual(by_search.data[0]['id'], self.registration.public_id)
+        self.assertEqual(by_status.data['count'], 1)
+        self.assertEqual(
+            by_search.data['results'][0]['id'], self.registration.public_id
+        )
 
     def test_list_without_auth_returns_401(self):
         # Act

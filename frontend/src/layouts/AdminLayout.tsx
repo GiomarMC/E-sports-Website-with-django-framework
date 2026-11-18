@@ -50,7 +50,7 @@ export default function AdminLayout() {
 
   const items: NavItem[] = [
     { to: '/admin', label: 'Inicio', icon: House },
-    { to: '/admin/inscripciones', label: 'Inscripciones', icon: ClipboardText, badge: pending.data?.length },
+    { to: '/admin/inscripciones', label: 'Inscripciones', icon: ClipboardText, badge: pending.data?.count },
     { to: '/admin/torneos', label: 'Torneos y matchs', icon: Trophy },
     { to: '/admin/juegos', label: 'Juegos', icon: GameController },
     { to: '/admin/streams', label: 'Streams', icon: Broadcast },
