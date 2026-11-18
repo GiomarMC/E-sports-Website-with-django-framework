@@ -462,7 +462,7 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
       <ConfirmDialog
         open={rejecting}
         title="Rechazar inscripción"
-        description="El equipo podrá ver el motivo al consultar su código y sus jugadores podrán volver a inscribirse."
+        description="Sus jugadores podrán volver a inscribirse."
         confirmLabel="Rechazar"
         tone="danger"
         loading={reject.isPending}
@@ -470,7 +470,10 @@ function RegistrationDetail({ registration, onClose }: { registration: Registrat
         onClose={() => setRejecting(false)}
       >
         <div className="mt-4">
-          <Field label="Motivo">
+          <Field
+            label="Motivo (público)"
+            hint="Lo verá cualquiera que busque al equipo o a uno de sus jugadores. No escribas datos personales ni acusaciones."
+          >
             {(id) => (
               <Textarea
                 id={id}
