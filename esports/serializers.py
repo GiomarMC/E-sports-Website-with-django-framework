@@ -282,7 +282,7 @@ class GameCreateUpdateSerializer(PublicModelSerializer):
             raise serializers.ValidationError(
                 "La imagen debe ser PNG, JPG, JPEG o WEBP."
                 )
-        return validate_file_size(value)
+        return validate_file_content(validate_file_size(value))
 
     def validate(self, data):
         user = self.context['request'].user
@@ -358,7 +358,7 @@ class PaymentMethodSerializer(PublicModelSerializer):
             raise serializers.ValidationError(
                 "El QR debe ser PNG, JPG, JPEG o WEBP."
                 )
-        return validate_file_size(value)
+        return validate_file_content(validate_file_size(value))
 
     def validate(self, data):
         def current(field):
@@ -604,7 +604,7 @@ class RegistrationCreateSerializer(PublicModelSerializer):
             ]
 
     def validate_logo(self, value):
-        return validate_file_size(value)
+        return validate_file_content(validate_file_size(value))
 
     def validate_voucher(self, value):
         return validate_file_content(validate_file_size(value))

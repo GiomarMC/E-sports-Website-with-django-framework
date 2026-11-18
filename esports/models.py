@@ -13,6 +13,7 @@ from django.core.validators import (
 )
 from django.db import models
 from django.utils import timezone
+from django.utils.deconstruct import deconstructible
 
 
 IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp']
@@ -65,10 +66,25 @@ class PublicIdModel(models.Model):
         abstract = True
 
 
+@deconstructible
+class RandomName:
+    """``upload_to`` that keeps only the extension of the uploaded file:
+    the original name (team name, phone, DNI...) never reaches the public
+    URL and the names cannot be guessed."""
+
+    def __init__(self, folder):
+        self.folder = folder
+
+    def __call__(self, instance, filename):
+        extension = os.path.splitext(filename)[1].lower()
+        return f'{self.folder}/{uuid.uuid4().hex}{extension}'
+
+    def __eq__(self, other):
+        return isinstance(other, RandomName) and other.folder == self.folder
+
+
 def voucher_path(instance, filename):
-    # Random name: the original one (team name, phone...) is not kept.
-    extension = os.path.splitext(filename)[1].lower()
-    return f'vouchers/{uuid.uuid4().hex}{extension}'
+    return RandomName('vouchers')(instance, filename)
 
 
 class CustomUser(AbstractUser, PublicIdModel):
@@ -161,11 +177,11 @@ class Game(PublicIdModel):
         )
     rules = models.TextField(blank=True)
     bases = models.FileField(
-        upload_to='bases/', blank=True,
+        upload_to=RandomName('bases'), blank=True,
         validators=[FileExtensionValidator(['pdf'])]
         )
     images = models.ImageField(
-        upload_to='games/', blank=True,
+        upload_to=RandomName('games'), blank=True,
         validators=[FileExtensionValidator(IMAGE_EXTENSIONS)]
         )
     active = models.BooleanField(default=True)
@@ -250,7 +266,7 @@ class PaymentMethod(PublicIdModel):
     account_number = models.CharField(max_length=40, blank=True)
     cci = models.CharField(max_length=30, blank=True)
     qr_image = models.ImageField(
-        upload_to='payments/', blank=True,
+        upload_to=RandomName('payments'), blank=True,
         validators=[FileExtensionValidator(IMAGE_EXTENSIONS)]
         )
     instructions = models.TextField(blank=True)
@@ -385,7 +401,7 @@ class Registration(PublicIdModel):
         )
     team_name = models.CharField(max_length=100, blank=True)
     logo = models.ImageField(
-        upload_to='logos/', blank=True,
+        upload_to=RandomName('logos'), blank=True,
         validators=[FileExtensionValidator(IMAGE_EXTENSIONS)]
         )
     voucher = models.FileField(
@@ -742,7 +758,7 @@ class MediaContent(PublicIdModel):
     )
     title = models.CharField(max_length=100)
     file = models.FileField(
-        upload_to='media_content/',
+        upload_to=RandomName('media_content'),
         validators=[FileExtensionValidator(MEDIA_CONTENT_EXTENSIONS)]
         )
     type = models.CharField(max_length=10, choices=MEDIA_TYPES)
