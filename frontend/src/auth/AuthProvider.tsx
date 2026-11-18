@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { api, loadTokens, onTokensChange, saveTokens } from '../lib/api'
+import { api, endSession, hasAccessToken, mayHaveSession, onAccessTokenChange, refreshAccess, setAccessToken } from '../lib/api'
 import { keys } from '../lib/queries'
 import type { AdminUser, Id } from '../lib/types'
 
@@ -16,17 +16,35 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null)
 
+/** The refresh token comes in an HttpOnly cookie, never in the body. */
 interface LoginResponse {
   access: string
-  refresh: string
   admin: AdminUser
 }
 
+type Session = 'checking' | 'open' | 'closed'
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
-  const [hasTokens, setHasTokens] = useState(() => loadTokens() !== null)
+  // After a reload only the cookie is left: ask for a new access token
+  // (only when this browser had logged in, not for every visitor).
+  const [session, setSession] = useState<Session>(() =>
+    hasAccessToken() ? 'open' : mayHaveSession() ? 'checking' : 'closed',
+  )
 
-  useEffect(() => onTokensChange((tokens) => setHasTokens(tokens !== null)), [])
+  useEffect(() => onAccessTokenChange((token) => setSession(token ? 'open' : 'closed')), [])
+
+  // Only on mount: later refreshes happen when a request gets a 401.
+  useEffect(() => {
+    if (!hasAccessToken() && mayHaveSession()) {
+      // Offline: show the login instead of waiting forever.
+      refreshAccess().then((ok) => {
+        if (!ok && !hasAccessToken()) setSession('closed')
+      })
+    }
+  }, [])
+
+  const hasTokens = session === 'open'
 
   const me = useQuery({
     queryKey: keys.me,
@@ -43,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: { username, password },
         auth: false,
       })
-      saveTokens({ access: data.access, refresh: data.refresh })
+      setAccessToken(data.access)
       queryClient.setQueryData(keys.me, data.admin)
       return data.admin
     },
@@ -51,10 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(() => {
-    // Revoke the refresh token on the server; the local session ends anyway.
-    const tokens = loadTokens()
-    if (tokens) api('admin/logout/', { method: 'POST', body: { refresh: tokens.refresh }, auth: false }).catch(() => {})
-    saveTokens(null)
+    // Revokes the cookie token on the server; the local session ends anyway.
+    endSession()
     queryClient.clear()
   }, [queryClient])
 
@@ -63,14 +79,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthState>(
     () => ({
       user,
-      loading: hasTokens && me.isPending,
+      loading: session === 'checking' || (hasTokens && me.isPending),
       isSuperadmin: user?.role === 'superadmin',
       login,
       logout,
       canManage: (gameId) =>
         !!user && (user.role === 'superadmin' || (!!gameId && user.games.some((game) => game.id === gameId))),
     }),
-    [user, hasTokens, me.isPending, login, logout],
+    [user, session, hasTokens, me.isPending, login, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

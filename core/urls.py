@@ -10,7 +10,8 @@ from django.urls import include, path
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
-from rest_framework_simplejwt.views import TokenRefreshView
+
+from esports.session import LogoutView, RefreshView
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -25,9 +26,9 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     path('api/', include('esports.urls')),
-    path('api/token/refresh/',
-         TokenRefreshView.as_view(),
-         name='token_refresh'),
+    # The refresh token travels in an HttpOnly cookie (esports/session.py).
+    path('api/token/refresh/', RefreshView.as_view(), name='token_refresh'),
+    path('api/token/logout/', LogoutView.as_view(), name='token_logout'),
 ]
 
 if settings.API_DOCS:

@@ -216,44 +216,113 @@ class ThrottleTestCase(APITestCase):
 
 
 class TokenRevocationTestCase(APITestCase):
+    """The refresh token travels only in an HttpOnly cookie; it rotates
+    and is revoked on logout and password changes."""
 
     def setUp(self):
         self.admin = AdminGameFactory().admin
-        response = self.client.post(reverse('admin-login'), {
+        self.login = self.client.post(reverse('admin-login'), {
             'username': self.admin.username, 'password': DEFAULT_PASSWORD,
         })
-        self.refresh = response.data['refresh']
-        self.access = response.data['access']
+        self.access = self.login.data['access']
+        self.refresh = self.cookie()
         self.refresh_url = reverse('token_refresh')
+
+    def cookie(self):
+        return self.client.cookies[settings.REFRESH_COOKIE_NAME].value
+
+    def use_cookie(self, value):
+        self.client.cookies[settings.REFRESH_COOKIE_NAME] = value
+
+    def test_refresh_token_is_only_in_an_httponly_cookie(self):
+        # Arrange
+        cookie = self.login.cookies[settings.REFRESH_COOKIE_NAME]
+
+        # Assert
+        self.assertNotIn('refresh', self.login.data)
+        self.assertTrue(cookie['httponly'])
+        self.assertEqual(cookie['samesite'], 'Strict')
+        self.assertEqual(cookie['path'], '/api/token/')
+        self.assertGreater(int(cookie['max-age']), 0)
 
     def test_refresh_rotates_and_old_token_stops_working(self):
         # Act
-        first = self.client.post(self.refresh_url, {'refresh': self.refresh})
-        again = self.client.post(self.refresh_url, {'refresh': self.refresh})
+        first = self.client.post(self.refresh_url)
+        rotated = self.cookie()
+        self.use_cookie(self.refresh)
+        again = self.client.post(self.refresh_url)
 
         # Assert
         self.assertEqual(first.status_code, status.HTTP_200_OK)
-        self.assertIn('refresh', first.data)
+        self.assertIn('access', first.data)
+        self.assertNotIn('refresh', first.data)
+        self.assertNotEqual(rotated, self.refresh)
         self.assertEqual(again.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_logout_blacklists_the_refresh_token(self):
+    def test_refresh_without_cookie_returns_401(self):
+        # Arrange
+        self.client.cookies.clear()
+
         # Act
-        logout = self.client.post(
-            reverse('admin-logout'), {'refresh': self.refresh}
+        response = self.client.post(self.refresh_url)
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_refresh_ignores_an_expired_access_header(self):
+        # Arrange
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer expired.token')
+
+        # Act
+        response = self.client.post(self.refresh_url)
+
+        # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_requests_from_another_site_are_rejected(self):
+        # Act
+        refresh = self.client.post(
+            self.refresh_url, HTTP_ORIGIN='https://evil.subepe.app'
         )
+        logout = self.client.post(
+            reverse('token_logout'), HTTP_ORIGIN='https://evil.example.com'
+        )
+        login = self.client.post(reverse('admin-login'), {
+            'username': self.admin.username, 'password': DEFAULT_PASSWORD,
+        }, HTTP_ORIGIN='https://evil.example.com')
+
+        # Assert
+        self.assertEqual(refresh.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(logout.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(login.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_requests_from_the_site_itself_are_accepted(self):
+        # Act
         response = self.client.post(
-            self.refresh_url, {'refresh': self.refresh}
+            self.refresh_url, HTTP_ORIGIN='http://testserver'
         )
 
         # Assert
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_logout_blacklists_the_token_and_deletes_the_cookie(self):
+        # Act
+        logout = self.client.post(reverse('token_logout'))
+        deleted = logout.cookies[settings.REFRESH_COOKIE_NAME].value
+        self.use_cookie(self.refresh)
+        response = self.client.post(self.refresh_url)
+
+        # Assert
         self.assertEqual(logout.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(deleted, '')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_logout_with_invalid_token_is_harmless(self):
+        # Arrange
+        self.use_cookie('not-a-token')
+
         # Act
-        response = self.client.post(
-            reverse('admin-logout'), {'refresh': 'not-a-token'}
-        )
+        response = self.client.post(reverse('token_logout'))
 
         # Assert
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
@@ -268,13 +337,16 @@ class TokenRevocationTestCase(APITestCase):
             'new_password': 'Otra-clave-segura-2026',
         })
         self.client.credentials()
-        response = self.client.post(
-            self.refresh_url, {'refresh': self.refresh}
-        )
+        this_device = self.client.post(self.refresh_url)
+        self.use_cookie(self.refresh)
+        other_device = self.client.post(self.refresh_url)
 
         # Assert
         self.assertEqual(changed.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(this_device.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            other_device.status_code, status.HTTP_401_UNAUTHORIZED
+        )
 
     def test_password_reset_logs_out_the_admin(self):
         # Arrange
@@ -288,9 +360,7 @@ class TokenRevocationTestCase(APITestCase):
             {'new_password': 'Otra-clave-segura-2026'},
         )
         self.client.force_authenticate(user=None)
-        response = self.client.post(
-            self.refresh_url, {'refresh': self.refresh}
-        )
+        response = self.client.post(self.refresh_url)
 
         # Assert
         self.assertEqual(reset.status_code, status.HTTP_200_OK)

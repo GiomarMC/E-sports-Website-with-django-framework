@@ -19,7 +19,6 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.token_blacklist.models import (
     BlacklistedToken, OutstandingToken,
 )
@@ -27,6 +26,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from esports import services, webhooks
 from esports.pagination import TEAM_ORDER, TeamPagination
+from esports.session import (
+    check_origin, login_response, set_refresh_cookie,
+)
 from esports.models import (
     AdminGame, ContactInfo, Game, Match, MediaContent, OrganizerContact,
     PaymentMethod,
@@ -138,7 +140,6 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
     lookup_value_regex = PUBLIC_ID_REGEX
     permission_classes_by_action = {
         'login': PUBLIC,
-        'logout': PUBLIC,
         'me': [IsAdminOrSuperAdmin],
         'change_password': [IsAdminOrSuperAdmin],
         'reset_password': [IsSuperAdmin],
@@ -159,30 +160,15 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
     @action(detail=False, methods=['post'], url_path='login',
             throttle_scope='login')
     def login(self, request):
+        """The access token comes in the body; the refresh token only in
+        an HttpOnly cookie (see esports/session.py). Logout:
+        ``POST /api/token/logout/``."""
+        check_origin(request)
         serializer = AdminLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         user = serializer.validated_data['user']
-        refresh = RefreshToken.for_user(user)
-
-        return Response({
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-            'admin': AdminListSerializer(user).data,
-        }, status=status.HTTP_200_OK)
-
-    @swagger_auto_schema(request_body=openapi.Schema(
-        type=openapi.TYPE_OBJECT,
-        properties={'refresh': openapi.Schema(type=openapi.TYPE_STRING)},
-    ))
-    @action(detail=False, methods=['post'], url_path='logout')
-    def logout(self, request):
-        """Blacklists the refresh token so it cannot be used again."""
-        try:
-            RefreshToken(request.data.get('refresh', '')).blacklist()
-        except TokenError:
-            pass  # Already expired or invalid: nothing to revoke.
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return login_response(user, {'admin': AdminListSerializer(user).data})
 
     @action(detail=False, methods=['get'], url_path='me')
     def me(self, request):
@@ -207,9 +193,11 @@ class AdminViewSet(ActionPermissionMixin, viewsets.ViewSet):
         user.save()
         revoke_tokens(user)
 
-        return Response({
+        # Every other device is logged out; this one gets a new session.
+        response = Response({
             "message": "Contraseña actualizada."
         }, status=status.HTTP_200_OK)
+        return set_refresh_cookie(response, RefreshToken.for_user(user))
 
     @swagger_auto_schema(request_body=ResetPasswordSerializer)
     @action(detail=True, methods=['post'], url_path='reset-password')

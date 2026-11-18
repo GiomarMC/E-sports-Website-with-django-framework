@@ -1,12 +1,4 @@
-// Small fetch client for the Django API with JWT (access + refresh) support.
-
 const BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
-const TOKENS_KEY = 'esports.tokens'
-
-export interface Tokens {
-  access: string
-  refresh: string
-}
 
 export type FieldErrors = Record<string, string>
 
@@ -21,32 +13,94 @@ export class ApiError extends Error {
   }
 }
 
-export function loadTokens(): Tokens | null {
+// ------------------------------------------------------------- session
+// The refresh token lives in an HttpOnly cookie that only the server can
+// read (an injected script cannot steal it). The access token (15 minutes)
+// lives only in memory: reloading the page asks for a new one with the
+// cookie (``refreshAccess``).
+
+let accessToken: string | null = null
+const accessListeners = new Set<(token: string | null) => void>()
+
+// Not secret: only says "there may be a session cookie", so public visitors
+// do not ask the server for a session on every page.
+const SESSION_HINT_KEY = 'esports.session'
+// Older versions kept both tokens here: remove them.
+const LEGACY_TOKENS_KEY = 'esports.tokens'
+
+function storage(action: (store: Storage) => void) {
   try {
-    const raw = localStorage.getItem(TOKENS_KEY)
-    return raw ? (JSON.parse(raw) as Tokens) : null
+    action(localStorage)
   } catch {
-    return null
+    // Storage blocked (private mode): the hint just does not persist.
   }
 }
 
-export function saveTokens(tokens: Tokens | null) {
-  try {
-    if (tokens) localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens))
-    else localStorage.removeItem(TOKENS_KEY)
-  } catch {
-    // Storage blocked (private mode): the session lives only in memory.
-  }
-  tokenListeners.forEach((listener) => listener(tokens))
+storage((store) => store.removeItem(LEGACY_TOKENS_KEY))
+
+export function hasAccessToken() {
+  return accessToken !== null
 }
 
-const tokenListeners = new Set<(tokens: Tokens | null) => void>()
+export function setAccessToken(token: string | null) {
+  accessToken = token
+  storage((store) => (token ? store.setItem(SESSION_HINT_KEY, '1') : store.removeItem(SESSION_HINT_KEY)))
+  accessListeners.forEach((listener) => listener(token))
+}
 
-export function onTokensChange(listener: (tokens: Tokens | null) => void) {
-  tokenListeners.add(listener)
+export function onAccessTokenChange(listener: (token: string | null) => void) {
+  accessListeners.add(listener)
   return () => {
-    tokenListeners.delete(listener)
+    accessListeners.delete(listener)
   }
+}
+
+export function mayHaveSession() {
+  let hint = false
+  storage((store) => (hint = store.getItem(SESSION_HINT_KEY) === '1'))
+  return hint
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+let refreshing: Promise<boolean> | null = null
+
+/** New access token from the session cookie. The cookie rotates on every
+ * refresh: if another tab rotated it at the same moment the first try
+ * fails, and the second one uses the cookie the browser already updated. */
+export function refreshAccess(): Promise<boolean> {
+  refreshing ??= (async () => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let response: Response
+      try {
+        response = await fetch(`${BASE_URL}/api/token/refresh/`, {
+          method: 'POST',
+          headers: { Accept: 'application/json' },
+          credentials: 'same-origin',
+        })
+      } catch {
+        return false // Offline: keep the session, the next request retries.
+      }
+      if (response.ok) {
+        const data = (await response.json()) as { access: string }
+        setAccessToken(data.access)
+        return true
+      }
+      if (response.status !== 401) break
+      if (attempt === 0) await wait(400)
+    }
+    setAccessToken(null)
+    return false
+  })().finally(() => {
+    refreshing = null
+  })
+  return refreshing
+}
+
+/** Ends the session on the server (blacklists the cookie token). */
+export async function endSession() {
+  setAccessToken(null)
+  await fetch(`${BASE_URL}/api/token/logout/`, { method: 'POST', credentials: 'same-origin' }).catch(() => {})
 }
 
 function flatten(value: unknown): string {
@@ -71,37 +125,6 @@ export function parseErrorBody(status: number, body: unknown): ApiError {
   return new ApiError(status, status >= 500 ? 'Error del servidor. Intenta de nuevo.' : 'Error')
 }
 
-let refreshing: Promise<boolean> | null = null
-
-async function refreshAccess(): Promise<boolean> {
-  const tokens = loadTokens()
-  if (!tokens) return false
-  refreshing ??= fetch(`${BASE_URL}/api/token/refresh/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh: tokens.refresh }),
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        // Another tab may have rotated the refresh token first: use its new
-        // tokens instead of logging out.
-        const current = loadTokens()
-        if (current && current.refresh !== tokens.refresh) return true
-        saveTokens(null)
-        return false
-      }
-      // The refresh token rotates: the old one is blacklisted on the server.
-      const data = (await response.json()) as { access: string; refresh?: string }
-      saveTokens({ access: data.access, refresh: data.refresh ?? tokens.refresh })
-      return true
-    })
-    .catch(() => false)
-    .finally(() => {
-      refreshing = null
-    })
-  return refreshing
-}
-
 export interface RequestOptions {
   method?: string
   body?: unknown
@@ -120,8 +143,8 @@ function buildUrl(path: string, params?: RequestOptions['params']) {
 export async function api<T>(path: string, options: RequestOptions = {}, retry = true): Promise<T> {
   const { method = 'GET', body, params, auth = true } = options
   const headers: Record<string, string> = { Accept: 'application/json' }
-  const tokens = loadTokens()
-  if (auth && tokens) headers.Authorization = `Bearer ${tokens.access}`
+  const token = accessToken
+  if (auth && token) headers.Authorization = `Bearer ${token}`
 
   let payload: BodyInit | undefined
   if (body instanceof FormData) payload = body
@@ -132,12 +155,12 @@ export async function api<T>(path: string, options: RequestOptions = {}, retry =
 
   let response: Response
   try {
-    response = await fetch(buildUrl(path, params), { method, headers, body: payload })
+    response = await fetch(buildUrl(path, params), { method, headers, body: payload, credentials: 'same-origin' })
   } catch {
     throw new ApiError(0, 'No se pudo conectar con el servidor.')
   }
 
-  if (response.status === 401 && auth && tokens && retry) {
+  if (response.status === 401 && auth && token && retry) {
     if (await refreshAccess()) return api<T>(path, options, false)
   }
   if (response.status === 204) return undefined as T
